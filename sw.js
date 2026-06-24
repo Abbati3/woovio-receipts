@@ -23,7 +23,7 @@ const RUNTIME_CACHE = [
   'lib/vfs_fonts.js',
 ];
 
-let offlineMode = true;
+let offlineMode = false;
 
 self.addEventListener('message', e => {
   if (e.data && e.data.type === 'SET_OFFLINE_MODE') {

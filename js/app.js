@@ -67,7 +67,7 @@ window.addEventListener('unhandledrejection', e => {
 // ── Offline mode ───────────────────────────────────────────────────────────
 
 function getOfflineMode() {
-  return localStorage.getItem('offlineMode') !== 'false'; // default true
+  return localStorage.getItem('offlineMode') === 'true'; // default false
 }
 
 function setOfflineMode(val) {
