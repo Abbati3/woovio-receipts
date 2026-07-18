@@ -23,6 +23,7 @@ async function backupData() {
     if (navigator.canShare && navigator.canShare({ files: [new File([blob], filename, { type: 'application/json' })] })) {
       const file = new File([blob], filename, { type: 'application/json' });
       await navigator.share({ files: [file], title: 'Woovio Backup' });
+      localStorage.setItem('docsSinceBackup', '0');
       toast(`Backup shared — ${receipts.length} document(s)`, 'success');
     } else {
       // Desktop fallback
@@ -34,6 +35,7 @@ async function backupData() {
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 5000);
+      localStorage.setItem('docsSinceBackup', '0');
       toast(`Backup saved — ${receipts.length} document(s)`, 'success');
     }
   } catch (e) {

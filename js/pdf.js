@@ -100,18 +100,27 @@ async function exportPDF(doc) {
     totalsRows.push(tb(`VAT (${doc.vatRate || 7.5}%):`, naira(t.vat), [true, false, true, false]));
   }
 
+  const partPaid = doc.paymentStatus === 'Part-payment' && doc.amountPaid != null
+    ? doc.amountPaid : null;
+
   if (isReceipt) {
     const paid = doc.paymentStatus === 'Paid'   ? t.grandTotal
                : doc.paymentStatus === 'Unpaid' ? 0
-               : null;
+               : partPaid;
     totalsRows.push(tb('Amount Paid:', paid !== null ? naira(paid) : '—', [true, false, true, false]));
     const balText = doc.paymentStatus === 'Paid'   ? 'Fully paid'
                   : doc.paymentStatus === 'Unpaid' ? naira(t.grandTotal)
+                  : partPaid !== null ? naira(Math.max(0, t.grandTotal - partPaid))
                   : 'Part payment';
     totalsRows.push(tb('Balance due:', balText, [true, false, true, true]));
   } else {
     totalsRows.push(tb('Grand Total:', naira(t.grandTotal), [true, false, true, false], 'tGrandLabel'));
-    totalsRows.push(tb('Status:', doc.paymentStatus || 'Unpaid', [true, false, true, true]));
+    if (partPaid !== null) {
+      totalsRows.push(tb('Amount Paid:', naira(partPaid), [true, false, true, false]));
+      totalsRows.push(tb('Balance due:', naira(Math.max(0, t.grandTotal - partPaid)), [true, false, true, true]));
+    } else {
+      totalsRows.push(tb('Status:', doc.paymentStatus || 'Unpaid', [true, false, true, true]));
+    }
   }
 
   // ── Footer lines ───────────────────────────────────────────────────────────
@@ -269,7 +278,18 @@ async function exportPDF(doc) {
   const filename = `${doc.docType}-${doc.number || 'draft'}.pdf`;
 
   try {
-    pdfMake.createPdf(dd).download(filename);
+    const pdf = pdfMake.createPdf(dd);
+    pdf.getBlob(blob => {
+      const file = new File([blob], filename, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        // iOS share sheet: WhatsApp, Files, AirDrop, etc.
+        navigator.share({ files: [file], title: filename }).catch(err => {
+          if (err.name !== 'AbortError') pdf.download(filename);
+        });
+      } else {
+        pdf.download(filename);
+      }
+    });
   } catch (e) {
     toast('PDF error: ' + e.message, 'error');
     console.error('exportPDF error:', e);

@@ -76,7 +76,9 @@ function renderBuilder(prefill) {
         <div class="field-group-label">Client</div>
         <div class="field-row">
           <label>Name <span style="color:var(--danger)">*</span></label>
-          <input id="b-clientName" type="text" value="${esc(prefill?.clientName||'')}" placeholder="Full name" />
+          <input id="b-clientName" type="text" value="${esc(prefill?.clientName||'')}" placeholder="Full name" list="client-list" autocomplete="off" oninput="maybeFillClient(this.value)" />
+          <datalist id="client-list"></datalist>
+          <datalist id="item-desc-list"></datalist>
         </div>
         <div class="field-row">
           <label>Phone (optional)</label>
@@ -134,6 +136,10 @@ function renderBuilder(prefill) {
           </div>
           <input type="hidden" id="b-paymentStatus" value="${prefill?.paymentStatus||'Paid'}" />
         </div>
+        <div class="field-row" id="amount-paid-row" style="${(prefill?.paymentStatus)==='Part-payment' ? '' : 'display:none;'}">
+          <label>Amount Paid (₦)</label>
+          <input id="b-amountPaid" type="number" min="0" step="0.01" value="${prefill?.amountPaid||''}" placeholder="0.00" />
+        </div>
       </div>
 
       <!-- Production days + T&C toggle (Invoice only) -->
@@ -186,7 +192,65 @@ function renderBuilder(prefill) {
   });
 
   updateTotals();
+  populateSuggestions();
 }
+
+// ── Client + item autocomplete (built from saved documents) ────────────────
+
+let _clientMap = {};   // name → { phone, address }
+let _priceMap  = {};   // item description → last unit price
+
+async function populateSuggestions() {
+  try {
+    const db   = await getDB();
+    const docs = await db.getAll('receipts');
+    docs.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '')); // oldest first so latest wins
+
+    _clientMap = {};
+    _priceMap  = {};
+    for (const d of docs) {
+      if (d.clientName) {
+        _clientMap[d.clientName] = { phone: d.clientPhone || '', address: d.clientAddress || '' };
+      }
+      for (const it of (d.items || [])) {
+        if (it.description && it.unitPrice > 0) _priceMap[it.description] = it.unitPrice;
+      }
+    }
+
+    const clientList = document.getElementById('client-list');
+    if (clientList) {
+      clientList.innerHTML = Object.keys(_clientMap)
+        .map(n => `<option value="${esc(n)}"></option>`).join('');
+    }
+    const itemList = document.getElementById('item-desc-list');
+    if (itemList) {
+      itemList.innerHTML = Object.keys(_priceMap)
+        .map(n => `<option value="${esc(n)}"></option>`).join('');
+    }
+  } catch(e) { console.error('populateSuggestions:', e); }
+}
+
+function maybeFillClient(name) {
+  const c = _clientMap[name];
+  if (!c) return;
+  const phoneEl = document.getElementById('b-clientPhone');
+  const addrEl  = document.getElementById('b-clientAddress');
+  if (phoneEl && !phoneEl.value && c.phone)   phoneEl.value = c.phone;
+  if (addrEl  && !addrEl.value  && c.address) addrEl.value  = c.address;
+}
+
+function maybeFillPrice(descInput) {
+  const price = _priceMap[descInput.value];
+  if (!price) return;
+  const priceEl = descInput.closest('.item-row').querySelector('.item-price');
+  if (priceEl && !priceEl.value) {
+    priceEl.value = price;
+    updateLineTotals(priceEl);
+  }
+}
+
+window.maybeFillClient = maybeFillClient;
+window.maybeFillPrice  = maybeFillPrice;
 
 // ── Item rows ──────────────────────────────────────────────────────────────
 
@@ -198,7 +262,7 @@ function appendItemRow(container, item, idx) {
   row.dataset.idx = idx;
   row.innerHTML = `
     <div class="item-row-top">
-      <input class="item-desc" type="text" placeholder="Description" value="${esc(item.description||'')}" oninput="updateTotals()" />
+      <input class="item-desc" type="text" placeholder="Description" value="${esc(item.description||'')}" list="item-desc-list" autocomplete="off" oninput="maybeFillPrice(this);updateTotals()" />
       <button class="item-remove" onclick="removeItem(this)" aria-label="Remove item">×</button>
     </div>
     <div class="item-row-nums">
@@ -308,6 +372,8 @@ function selectStatus(status, btn) {
   });
   btn.classList.add('pill-active');
   document.getElementById('b-paymentStatus').value = status;
+  const row = document.getElementById('amount-paid-row');
+  if (row) row.style.display = status === 'Part-payment' ? '' : 'none';
 }
 
 // ── Save ───────────────────────────────────────────────────────────────────
@@ -335,6 +401,9 @@ async function saveDoc() {
     const discountVal = parseFloat(document.getElementById('b-discountValue')?.value) || 0;
     if (discountVal < 0) { toast('Discount cannot be negative', 'error'); return; }
 
+    const amountPaidVal = parseFloat(document.getElementById('b-amountPaid')?.value) || 0;
+    if (amountPaidVal < 0) { toast('Amount paid cannot be negative', 'error'); return; }
+
     const discountType  = document.getElementById('b-discountType').value;
     const discountValue = parseFloat(document.getElementById('b-discountValue')?.value) || 0;
     const vatApplied    = document.getElementById('b-vat-toggle').classList.contains('on');
@@ -354,6 +423,9 @@ async function saveDoc() {
       vatApplied,
       vatRate,
       paymentStatus:   document.getElementById('b-paymentStatus').value,
+      amountPaid:      document.getElementById('b-paymentStatus').value === 'Part-payment'
+                         ? (parseFloat(document.getElementById('b-amountPaid')?.value) || 0)
+                         : null,
       productionDays:  _docType === 'Invoice'
                          ? (parseInt(document.getElementById('b-productionDays')?.value) || null)
                          : null,
@@ -381,6 +453,14 @@ async function saveDoc() {
     }
 
     toast(_docType + ' saved ✓', 'success');
+
+    // Backup reminder: nudge every 10 documents since last backup
+    const sinceBackup = (parseInt(localStorage.getItem('docsSinceBackup')) || 0) + 1;
+    localStorage.setItem('docsSinceBackup', sinceBackup);
+    if (sinceBackup >= 10) {
+      setTimeout(() => toast(`${sinceBackup} documents since last backup — export one in Settings`, 'error'), 2500);
+    }
+
     navigate('history');
     await renderHistory();
   } catch (err) {
@@ -401,7 +481,39 @@ async function renderHistory() {
   if (searchEl) searchEl.value = '';
   const clearBtn = document.getElementById('search-clear');
   if (clearBtn) clearBtn.style.display = 'none';
+  renderHistorySummary();
   renderHistoryCards(_allDocs);
+}
+
+function outstandingOf(d) {
+  const grand = d.totals?.grandTotal || 0;
+  if (d.paymentStatus === 'Unpaid')       return grand;
+  if (d.paymentStatus === 'Part-payment') return Math.max(0, grand - (d.amountPaid || 0));
+  return 0;
+}
+
+function renderHistorySummary() {
+  const el = document.getElementById('history-summary');
+  if (!el) return;
+  if (!_allDocs.length) { el.innerHTML = ''; return; }
+
+  const thisMonth  = new Date().toISOString().slice(0, 7);
+  const monthDocs  = _allDocs.filter(d => (d.date || '').startsWith(thisMonth));
+  const monthTotal = monthDocs.reduce((sum, d) => sum + (d.totals?.grandTotal || 0), 0);
+  const outstanding = _allDocs.reduce((sum, d) => sum + outstandingOf(d), 0);
+  const unpaidCount = _allDocs.filter(d => outstandingOf(d) > 0).length;
+
+  el.innerHTML = `
+    <div class="summary-card">
+      <div class="summary-item">
+        <div class="summary-value">${fmtNaira(monthTotal)}</div>
+        <div class="summary-label">This month · ${monthDocs.length} doc${monthDocs.length === 1 ? '' : 's'}</div>
+      </div>
+      <div class="summary-item ${outstanding > 0 ? 'summary-warn' : ''}">
+        <div class="summary-value">${fmtNaira(outstanding)}</div>
+        <div class="summary-label">Outstanding · ${unpaidCount} unpaid</div>
+      </div>
+    </div>`;
 }
 
 function filterHistory(query) {
@@ -443,18 +555,23 @@ function renderHistoryCards(docs) {
   }
   noResults.style.display = 'none';
 
+  const today = Date.now();
   list.innerHTML = docs.map(d => {
     const sc = (d.paymentStatus || 'Paid').toLowerCase().replace('-', '');
+    const bal = outstandingOf(d);
+    const ageDays = d.date ? Math.floor((today - new Date(d.date).getTime()) / 86400000) : 0;
+    const overdue = d.docType === 'Invoice' && bal > 0 && ageDays > 14;
     return `
     <div class="history-card" onclick="openHistoryDoc(${d.id})">
       <div class="hc-top">
         <span class="hc-type ${d.docType.toLowerCase()}">${esc(d.docType)}</span>
         <span class="hc-num">${esc(d.number)}</span>
-        <span class="hc-status status-${sc}">${esc(d.paymentStatus || 'Paid')}</span>
+        ${overdue ? '<span class="hc-status status-overdue">Overdue</span>' : ''}
+        <span class="hc-status status-${sc}" ${overdue ? 'style="margin-left:6px;"' : ''}>${esc(d.paymentStatus || 'Paid')}</span>
       </div>
       <div class="hc-client">${esc(d.clientName)}</div>
       <div class="hc-bottom">
-        <span class="hc-total">${fmtNaira(d.totals?.grandTotal || 0)}</span>
+        <span class="hc-total">${fmtNaira(d.totals?.grandTotal || 0)}${d.paymentStatus === 'Part-payment' && bal > 0 ? ` <span class="hc-balance">· Bal ${fmtNaira(bal)}</span>` : ''}</span>
         <span class="hc-date">${fmtDate(d.date)}</span>
       </div>
     </div>`;
@@ -489,6 +606,9 @@ function showDocSheet(doc) {
         ${t.discount > 0 ? `<div class="sheet-row"><span>Discount</span><span style="color:var(--danger)">-${fmtNaira(t.discount)}</span></div>` : ''}
         ${doc.vatApplied && t.vat > 0 ? `<div class="sheet-row"><span>VAT</span><span>${fmtNaira(t.vat)}</span></div>` : ''}
         <div class="sheet-row sheet-grand"><span>Total</span><span>${fmtNaira(t.grandTotal)}</span></div>
+        ${doc.paymentStatus === 'Part-payment' && doc.amountPaid != null ? `
+        <div class="sheet-row"><span>Amount Paid</span><span>${fmtNaira(doc.amountPaid)}</span></div>
+        <div class="sheet-row"><span>Balance Due</span><span style="color:var(--danger);font-weight:700;">${fmtNaira(Math.max(0, (t.grandTotal||0) - doc.amountPaid))}</span></div>` : ''}
         <div class="sheet-row" style="margin-top:4px;"><span>Status</span>
           <span class="hc-status status-${(doc.paymentStatus||'Paid').toLowerCase().replace('-','')}">${doc.paymentStatus}</span>
         </div>
@@ -496,9 +616,11 @@ function showDocSheet(doc) {
 
       <div class="sheet-actions">
         <button class="btn btn-gold" style="width:100%;" onclick="triggerExport(${doc.id})">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Export PDF
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+          Share PDF
         </button>
+        ${doc.docType === 'Invoice' ? `
+        <button class="btn btn-outline" style="width:100%;margin-top:10px;" onclick="convertToReceipt(${doc.id})">Convert to Receipt</button>` : ''}
         <div style="display:flex;gap:10px;margin-top:10px;">
           <button class="btn btn-outline" style="flex:1;" onclick="duplicateDoc(${doc.id})">Duplicate</button>
           <button class="btn btn-outline" style="flex:1;color:var(--danger);border-color:var(--danger);" onclick="deleteDoc(${doc.id})">Delete</button>
@@ -554,6 +676,25 @@ async function duplicateDoc(id) {
   startEditDoc(dup);
 }
 
+async function convertToReceipt(id) {
+  const db  = await getDB();
+  const src = await db.get('receipts', id);
+  if (!src) return;
+  closeDocSheet();
+  const s   = getSettings() || {};
+  const rec = Object.assign({}, src);
+  delete rec.id;
+  rec.docType       = 'Receipt';
+  rec.number        = genNumber(s);
+  rec.date          = new Date().toISOString().slice(0, 10);
+  rec.createdAt     = new Date().toISOString();
+  rec.paymentStatus = 'Paid';
+  rec.amountPaid    = null;
+  rec.includeTC     = false;
+  startEditDoc(rec);
+  toast('Converted — review and save', 'success');
+}
+
 async function deleteDoc(id) {
   if (!confirm('Delete this document? This cannot be undone.')) return;
   const db = await getDB();
@@ -582,6 +723,7 @@ window.hidePdfLoader     = hidePdfLoader;
 window.closeDocSheet    = closeDocSheet;
 window.triggerExport    = triggerExport;
 window.duplicateDoc     = duplicateDoc;
+window.convertToReceipt = convertToReceipt;
 window.deleteDoc        = deleteDoc;
 window.addItem          = addItem;
 window.removeItem       = removeItem;

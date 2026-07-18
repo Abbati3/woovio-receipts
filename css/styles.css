@@ -519,6 +519,34 @@ html, body {
 .status-paid        { background: #E8F5E9; color: #2E7D32; }
 .status-unpaid      { background: #FFEBEE; color: var(--danger); }
 .status-partpayment { background: #FFF8E1; color: #F57F17; }
+.status-overdue     { background: var(--danger); color: #fff; }
+
+.hc-balance { font-size: 12px; font-weight: 600; color: var(--danger); }
+
+/* ── History summary card ── */
+.summary-card {
+  display: flex;
+  gap: 10px;
+  margin: 0 16px 14px;
+}
+.summary-item {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.summary-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--dark);
+}
+.summary-warn .summary-value { color: var(--danger); }
+.summary-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
 
 .hc-client { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
 .hc-bottom { display: flex; justify-content: space-between; align-items: center; }
