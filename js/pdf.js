@@ -39,6 +39,27 @@ function makeBracketWLogo(size) {
   return canvas.toDataURL('image/png');
 }
 
+// ── Terms & Conditions (shared between PDF and preview) ────────────────────
+
+function woovioTerms(productionDays) {
+  return [
+    'Production starts after at least 75% of the sales amount is paid.',
+    'The production and delivery time of the goods is ' +
+      (productionDays ? productionDays + ' days' : '______') +
+      ', except for any obstacles.',
+    'Client has 7 working days to pay balance after being informed about the completion of his order.',
+    'Cancellation of orders shall be communicated to the company before payment and production. The client will not get a refund when an order is cancelled after production commences.',
+    'All transportation costs from the showroom are solely the client\'s responsibility.',
+    'Goods will be released for delivery only after full payment is made and confirmed.',
+    'In the case of custom orders and warehouse goods, transportation costs are paid for by the clients.',
+    'Goods not received within one year will be treated by the company as abandoned goods and cannot be claimed by the client. The company has the right to dispose of customer abandoned property after 1 year.',
+    'If the client\'s home/office is not ready when we go for installation, an additional installation fee will be charged for future visits.',
+    'None of the electrical systems used in our products are covered by warranty.',
+    'The client is required to have read and accepted the above written conditions before making an advance or any payment for the cost of goods.',
+  ];
+}
+window.woovioTerms = woovioTerms;
+
 // ── Main export function ────────────────────────────────────────────────────
 
 async function exportPDF(doc) {
@@ -241,21 +262,7 @@ async function exportPDF(doc) {
         },
         { text: 'Terms and Conditions', fontSize: 13, bold: true, margin: [0, 0, 0, 8] },
         {
-          ol: [
-            'Production starts after at least 75% of the sales amount is paid.',
-            'The production and delivery time of the goods is ' +
-              (doc.productionDays ? doc.productionDays + ' days' : '______') +
-              ', except for any obstacles.',
-            'Client has 7 working days to pay balance after being informed about the completion of his order.',
-            'Cancellation of orders shall be communicated to the company before payment and production. The client will not get a refund when an order is cancelled after production commences.',
-            'All transportation costs from the showroom are solely the client\'s responsibility.',
-            'Goods will be released for delivery only after full payment is made and confirmed.',
-            'In the case of custom orders and warehouse goods, transportation costs are paid for by the clients.',
-            'Goods not received within one year will be treated by the company as abandoned goods and cannot be claimed by the client. The company has the right to dispose of customer abandoned property after 1 year.',
-            'If the client\'s home/office is not ready when we go for installation, an additional installation fee will be charged for future visits.',
-            'None of the electrical systems used in our products are covered by warranty.',
-            'The client is required to have read and accepted the above written conditions before making an advance or any payment for the cost of goods.',
-          ],
+          ol: woovioTerms(doc.productionDays),
           fontSize: 10,
           color: BLACK,
           margin: [0, 0, 0, 0],

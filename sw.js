@@ -1,4 +1,4 @@
-const CACHE = 'woovio-v31';
+const CACHE = 'woovio-v33';
 
 // Critical app files — cached immediately on install
 const PRECACHE = [
@@ -34,7 +34,9 @@ self.addEventListener('message', e => {
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE)
-      .then(c => c.addAll(PRECACHE))
+      // cache:'reload' bypasses the browser HTTP cache so a new SW version
+      // always precaches genuinely fresh files, never stale cached copies
+      .then(c => c.addAll(PRECACHE.map(u => new Request(u, { cache: 'reload' }))))
       .then(() => self.skipWaiting())
   );
 });

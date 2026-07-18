@@ -586,58 +586,105 @@ async function openHistoryDoc(id) {
 }
 
 function showDocSheet(doc) {
+  const s = getSettings() || {};
   const t = doc.totals || {};
   const existing = document.getElementById('doc-sheet');
   if (existing) existing.remove();
 
+  const isReceipt = doc.docType === 'Receipt';
+  const partPaid  = doc.paymentStatus === 'Part-payment' && doc.amountPaid != null ? doc.amountPaid : null;
+
+  const itemRows = (doc.items || []).map(it => {
+    const qty = parseFloat(it.qty) || 0, price = parseFloat(it.unitPrice) || 0;
+    return `<tr><td class="pv-c">${qty}</td><td>${esc(it.description||'')}</td><td class="pv-r">${fmtNaira(price)}</td><td class="pv-r">${fmtNaira(qty*price)}</td></tr>`;
+  }).join('');
+
+  let totalsHtml = `<tr class="pv-total"><td colspan="3" class="pv-r">Total:</td><td class="pv-r">${fmtNaira(t.subtotal)}</td></tr>`;
+  if (t.discount > 0)
+    totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">Discount:</td><td class="pv-r">-${fmtNaira(t.discount)}</td></tr>`;
+  if (doc.vatApplied && t.vat > 0)
+    totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">VAT (${doc.vatRate||7.5}%):</td><td class="pv-r">${fmtNaira(t.vat)}</td></tr>`;
+  if (isReceipt) {
+    const paid = doc.paymentStatus === 'Paid' ? t.grandTotal : doc.paymentStatus === 'Unpaid' ? 0 : partPaid;
+    totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">Amount Paid:</td><td class="pv-r">${paid !== null ? fmtNaira(paid) : '—'}</td></tr>`;
+    const balText = doc.paymentStatus === 'Paid' ? 'Fully paid'
+                  : doc.paymentStatus === 'Unpaid' ? fmtNaira(t.grandTotal)
+                  : partPaid !== null ? fmtNaira(Math.max(0, t.grandTotal - partPaid)) : 'Part payment';
+    totalsHtml += `<tr class="pv-total pv-grand"><td colspan="3" class="pv-r">Balance due:</td><td class="pv-r">${balText}</td></tr>`;
+  } else {
+    totalsHtml += `<tr class="pv-total pv-grand"><td colspan="3" class="pv-r">Grand Total:</td><td class="pv-r">${fmtNaira(t.grandTotal)}</td></tr>`;
+    if (partPaid !== null) {
+      totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">Amount Paid:</td><td class="pv-r">${fmtNaira(partPaid)}</td></tr>`;
+      totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">Balance due:</td><td class="pv-r">${fmtNaira(Math.max(0, t.grandTotal - partPaid))}</td></tr>`;
+    } else {
+      totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">Status:</td><td class="pv-r">${esc(doc.paymentStatus||'Unpaid')}</td></tr>`;
+    }
+  }
+
+  const addrLine = (s.address || '').split('\n').filter(Boolean).join(' · ');
+  const tcHtml = !isReceipt && doc.includeTC && typeof woovioTerms === 'function' ? `
+    <div class="pv-tc">
+      ${s.accountDetails ? `<div class="pv-tc-head">Account Details</div><div class="pv-tc-acct">${esc(s.accountDetails).replace(/\n/g,'<br>')}</div>` : ''}
+      <div class="pv-tc-warn">Please read the terms and conditions stated below before making any payments!!!</div>
+      <div class="pv-tc-head">Terms and Conditions</div>
+      <ol>${woovioTerms(doc.productionDays).map(r => `<li>${esc(r)}</li>`).join('')}</ol>
+    </div>` : '';
+
   const sheet = document.createElement('div');
   sheet.id = 'doc-sheet';
   sheet.innerHTML = `
-    <div id="doc-sheet-overlay" onclick="closeDocSheet()"></div>
-    <div id="doc-sheet-panel">
-      <div class="sheet-handle"></div>
-      <div class="sheet-header">
-        <div class="sheet-title">${esc(doc.docType)} ${esc(doc.number)}</div>
-        <div class="sheet-sub">${fmtDate(doc.date)} · ${esc(doc.clientName)}</div>
+    <div id="doc-preview-panel">
+      <div class="pv-header">
+        <span>${esc(doc.docType)} ${esc(doc.number)}</span>
+        <span class="hc-status status-${(doc.paymentStatus||'Paid').toLowerCase().replace('-','')}" style="margin-left:auto;margin-right:12px;">${esc(doc.paymentStatus||'Paid')}</span>
+        <button class="pv-close" onclick="closeDocSheet()" aria-label="Close">×</button>
       </div>
-
-      <div class="sheet-totals">
-        ${t.discount > 0 ? `<div class="sheet-row"><span>Subtotal</span><span>${fmtNaira(t.subtotal)}</span></div>` : ''}
-        ${t.discount > 0 ? `<div class="sheet-row"><span>Discount</span><span style="color:var(--danger)">-${fmtNaira(t.discount)}</span></div>` : ''}
-        ${doc.vatApplied && t.vat > 0 ? `<div class="sheet-row"><span>VAT</span><span>${fmtNaira(t.vat)}</span></div>` : ''}
-        <div class="sheet-row sheet-grand"><span>Total</span><span>${fmtNaira(t.grandTotal)}</span></div>
-        ${doc.paymentStatus === 'Part-payment' && doc.amountPaid != null ? `
-        <div class="sheet-row"><span>Amount Paid</span><span>${fmtNaira(doc.amountPaid)}</span></div>
-        <div class="sheet-row"><span>Balance Due</span><span style="color:var(--danger);font-weight:700;">${fmtNaira(Math.max(0, (t.grandTotal||0) - doc.amountPaid))}</span></div>` : ''}
-        <div class="sheet-row" style="margin-top:4px;"><span>Status</span>
-          <span class="hc-status status-${(doc.paymentStatus||'Paid').toLowerCase().replace('-','')}">${doc.paymentStatus}</span>
+      <div class="pv-scroll">
+        <div class="pv-paper">
+          <img class="pv-logo" src="${typeof makeBracketWLogo === 'function' ? makeBracketWLogo(200) : ''}" alt="" />
+          <div class="pv-biz">${esc(s.businessName || 'Woovio Interiors')}</div>
+          <div class="pv-tag">${esc(s.tagline || '')}</div>
+          <div class="pv-doctype">${esc(doc.docType.toUpperCase())}</div>
+          <div class="pv-meta"><span>Date: <u>${fmtDate(doc.date)}</u></span><span>${esc(doc.docType)} No: <u>${esc(doc.number||'')}</u></span></div>
+          <div class="pv-meta"><span>Name: <u>${esc(doc.clientName||'')}</u></span>${doc.clientPhone ? `<span>Contact: <u>${esc(doc.clientPhone)}</u></span>` : ''}</div>
+          ${doc.clientAddress ? `<div class="pv-meta"><span>Address: <u>${esc(doc.clientAddress)}</u></span></div>` : ''}
+          <table class="pv-table">
+            <thead><tr><th class="pv-c">Qty</th><th>Description</th><th class="pv-r">Price</th><th class="pv-r">Total</th></tr></thead>
+            <tbody>${itemRows}${totalsHtml}</tbody>
+          </table>
+          ${doc.notes ? `<div class="pv-notes">${esc(doc.notes)}</div>` : ''}
+          <div class="pv-sig">
+            <div>Authorized Signature:</div>
+            ${s.signatureBase64 ? `<img src="${s.signatureBase64}" alt="signature" />` : '<div class="pv-sigline"></div>'}
+            <div class="pv-signame">${esc(s.signatureName || '')}</div>
+          </div>
+          ${tcHtml}
+          <div class="pv-footer">${esc(addrLine)}${s.phone ? ' · ' + esc(s.phone) : ''}</div>
         </div>
       </div>
-
-      <div class="sheet-actions">
+      <div class="pv-actions">
         <button class="btn btn-gold" style="width:100%;" onclick="triggerExport(${doc.id})">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
           Share PDF
         </button>
-        ${doc.docType === 'Invoice' ? `
-        <button class="btn btn-outline" style="width:100%;margin-top:10px;" onclick="convertToReceipt(${doc.id})">Convert to Receipt</button>` : ''}
         <div style="display:flex;gap:10px;margin-top:10px;">
+          ${doc.docType === 'Invoice' ? `<button class="btn btn-outline" style="flex:1;" onclick="convertToReceipt(${doc.id})">To Receipt</button>` : ''}
           <button class="btn btn-outline" style="flex:1;" onclick="duplicateDoc(${doc.id})">Duplicate</button>
           <button class="btn btn-outline" style="flex:1;color:var(--danger);border-color:var(--danger);" onclick="deleteDoc(${doc.id})">Delete</button>
         </div>
-        <button class="btn btn-outline" style="width:100%;margin-top:10px;" onclick="closeDocSheet()">Close</button>
       </div>
     </div>
   `;
   document.body.appendChild(sheet);
-  requestAnimationFrame(() => sheet.querySelector('#doc-sheet-panel').classList.add('open'));
+  setTimeout(() => sheet.querySelector('#doc-preview-panel').classList.add('open'), 20);
 }
 
 function closeDocSheet() {
   const sheet = document.getElementById('doc-sheet');
   if (!sheet) return;
-  sheet.querySelector('#doc-sheet-panel').classList.remove('open');
-  setTimeout(() => sheet.remove(), 300);
+  const panel = sheet.querySelector('#doc-preview-panel');
+  if (panel) panel.classList.remove('open');
+  setTimeout(() => sheet.remove(), 250);
 }
 
 async function triggerExport(id) {

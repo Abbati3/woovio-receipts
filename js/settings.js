@@ -176,6 +176,10 @@ function renderSettingsView() {
             </div>
             <button class="toggle ${getOfflineMode() ? 'on' : ''}" id="offline-toggle" onclick="toggleOfflineMode()" aria-pressed="${getOfflineMode()}"></button>
           </div>
+          <button class="btn btn-outline" style="width:100%;margin-top:4px;" onclick="location.reload()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Restart App
+          </button>
         </div>
       </div>
 
