@@ -157,7 +157,7 @@ function renderSettingsView() {
       <!-- Account details (for invoices) -->
       <div class="field-group">
         <div class="field-group-label">Payment Account Details</div>
-        <p style="font-size:13px;color:var(--muted);padding:0 16px 8px;line-height:1.5;">Printed on invoices before the Terms &amp; Conditions.</p>
+        <p style="font-size:13px;color:var(--muted);padding:0 16px 8px;line-height:1.5;">Printed on every invoice, under the totals.</p>
         <div class="field-row">
           <textarea id="s-accountDetails" rows="3">${esc(s.accountDetails)}</textarea>
         </div>

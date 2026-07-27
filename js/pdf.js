@@ -241,6 +241,12 @@ async function exportPDF(doc) {
         margin: [0, 0, 0, 14],
       },
 
+      // Payment account details (invoices — always shown, page 1)
+      ...(!isReceipt && s.accountDetails ? [
+        { text: 'Account Details', fontSize: 11, bold: true, margin: [0, 0, 0, 4] },
+        { text: s.accountDetails, fontSize: 10, margin: [0, 0, 0, 12] },
+      ] : []),
+
       // Notes
       ...(doc.notes ? [{ text: doc.notes, fontSize: 9, color: GREY, margin: [0, 0, 0, 8] }] : []),
 
@@ -251,11 +257,6 @@ async function exportPDF(doc) {
       ...(!isReceipt && doc.includeTC ? [
         // Force T&C onto a new page
         { text: '', pageBreak: 'before' },
-        // Account details
-        ...(s.accountDetails ? [
-          { text: 'Account Details', fontSize: 11, bold: true, margin: [0, 0, 0, 4] },
-          { text: s.accountDetails, fontSize: 10, margin: [0, 0, 0, 16] },
-        ] : []),
         {
           text: 'Please read the terms and conditions stated below before making any payments!!!',
           fontSize: 9, bold: true, color: BLACK, margin: [0, 0, 0, 10],

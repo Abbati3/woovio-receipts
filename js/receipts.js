@@ -2,19 +2,23 @@
 
 let _docType    = 'Receipt';
 let _editingId  = null;   // null = new, number = edit/duplicate
+let _editingCreatedAt = null;  // preserved so edits keep their place in history
 
 // ── Entry point ────────────────────────────────────────────────────────────
 
 function startNewDoc(type) {
-  _docType   = type || 'Receipt';
-  _editingId = null;
+  _docType          = type || 'Receipt';
+  _editingId        = null;
+  _editingCreatedAt = null;
   renderBuilder(null);
   navigate('builder');
 }
 
 function startEditDoc(doc) {
-  _docType   = doc.docType;
-  _editingId = doc.id;
+  _docType          = doc.docType;
+  _editingId        = doc.id;
+  // duplicates/conversions arrive without an id — they are new documents
+  _editingCreatedAt = doc.id ? doc.createdAt : null;
   renderBuilder(doc);
   navigate('builder');
 }
@@ -434,7 +438,7 @@ async function saveDoc() {
                          : false,
       notes:           document.getElementById('b-notes').value.trim(),
       totals,
-      createdAt:     new Date().toISOString(),
+      createdAt:     _editingCreatedAt || new Date().toISOString(),
     };
 
     if (_editingId) doc.id = _editingId;
@@ -452,7 +456,7 @@ async function saveDoc() {
       await saveSettings({ nextNumber: (s.nextNumber || 1) + 1 });
     }
 
-    toast(_docType + ' saved ✓', 'success');
+    toast(_docType + (_editingId ? ' updated ✓' : ' saved ✓'), 'success');
 
     // Backup reminder: nudge every 10 documents since last backup
     const sinceBackup = (parseInt(localStorage.getItem('docsSinceBackup')) || 0) + 1;
@@ -622,9 +626,14 @@ function showDocSheet(doc) {
   }
 
   const addrLine = (s.address || '').split('\n').filter(Boolean).join(' · ');
+  const acctHtml = !isReceipt && s.accountDetails ? `
+    <div class="pv-acct">
+      <div class="pv-tc-head">Account Details</div>
+      <div>${esc(s.accountDetails).replace(/\n/g, '<br>')}</div>
+    </div>` : '';
+
   const tcHtml = !isReceipt && doc.includeTC && typeof woovioTerms === 'function' ? `
     <div class="pv-tc">
-      ${s.accountDetails ? `<div class="pv-tc-head">Account Details</div><div class="pv-tc-acct">${esc(s.accountDetails).replace(/\n/g,'<br>')}</div>` : ''}
       <div class="pv-tc-warn">Please read the terms and conditions stated below before making any payments!!!</div>
       <div class="pv-tc-head">Terms and Conditions</div>
       <ol>${woovioTerms(doc.productionDays).map(r => `<li>${esc(r)}</li>`).join('')}</ol>
@@ -652,6 +661,7 @@ function showDocSheet(doc) {
             <thead><tr><th class="pv-c">Qty</th><th>Description</th><th class="pv-r">Price</th><th class="pv-r">Total</th></tr></thead>
             <tbody>${itemRows}${totalsHtml}</tbody>
           </table>
+          ${acctHtml}
           ${doc.notes ? `<div class="pv-notes">${esc(doc.notes)}</div>` : ''}
           <div class="pv-sig">
             <div>Authorized Signature:</div>
@@ -668,10 +678,12 @@ function showDocSheet(doc) {
           Share PDF
         </button>
         <div style="display:flex;gap:10px;margin-top:10px;">
-          ${doc.docType === 'Invoice' ? `<button class="btn btn-outline" style="flex:1;" onclick="convertToReceipt(${doc.id})">To Receipt</button>` : ''}
+          <button class="btn btn-outline" style="flex:1;" onclick="editDoc(${doc.id})">Edit</button>
           <button class="btn btn-outline" style="flex:1;" onclick="duplicateDoc(${doc.id})">Duplicate</button>
           <button class="btn btn-outline" style="flex:1;color:var(--danger);border-color:var(--danger);" onclick="deleteDoc(${doc.id})">Delete</button>
         </div>
+        ${doc.docType === 'Invoice' ? `
+        <button class="btn btn-outline" style="width:100%;margin-top:10px;" onclick="convertToReceipt(${doc.id})">Convert to Receipt</button>` : ''}
       </div>
     </div>
   `;
@@ -723,6 +735,14 @@ async function duplicateDoc(id) {
   startEditDoc(dup);
 }
 
+async function editDoc(id) {
+  const db  = await getDB();
+  const doc = await db.get('receipts', id);
+  if (!doc) return;
+  closeDocSheet();
+  startEditDoc(doc);
+}
+
 async function convertToReceipt(id) {
   const db  = await getDB();
   const src = await db.get('receipts', id);
@@ -771,6 +791,7 @@ window.closeDocSheet    = closeDocSheet;
 window.triggerExport    = triggerExport;
 window.duplicateDoc     = duplicateDoc;
 window.convertToReceipt = convertToReceipt;
+window.editDoc          = editDoc;
 window.deleteDoc        = deleteDoc;
 window.addItem          = addItem;
 window.removeItem       = removeItem;
