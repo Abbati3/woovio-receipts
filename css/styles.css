@@ -523,6 +523,19 @@ html, body {
 .status-unpaid      { background: #FFEBEE; color: var(--danger); }
 .status-partpayment { background: #FFF8E1; color: #F57F17; }
 .status-overdue     { background: var(--danger); color: #fff; }
+.status-settled     { background: #ECEFF1; color: #546E7A; }
+
+.hc-settled { opacity: 0.72; }
+.hc-settled .hc-total { text-decoration: line-through; text-decoration-color: #B0B0B0; }
+
+.pv-settled {
+  background: #ECEFF1;
+  color: #37474F;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 9px 16px;
+  text-align: center;
+}
 
 .hc-balance { font-size: 12px; font-weight: 600; color: var(--danger); }
 

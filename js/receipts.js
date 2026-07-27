@@ -3,6 +3,7 @@
 let _docType    = 'Receipt';
 let _editingId  = null;   // null = new, number = edit/duplicate
 let _editingCreatedAt = null;  // preserved so edits keep their place in history
+let _convertedFromId  = null;  // set when this receipt settles an existing invoice
 
 // ── Entry point ────────────────────────────────────────────────────────────
 
@@ -10,6 +11,7 @@ function startNewDoc(type) {
   _docType          = type || 'Receipt';
   _editingId        = null;
   _editingCreatedAt = null;
+  _convertedFromId  = null;
   renderBuilder(null);
   navigate('builder');
 }
@@ -19,6 +21,7 @@ function startEditDoc(doc) {
   _editingId        = doc.id;
   // duplicates/conversions arrive without an id — they are new documents
   _editingCreatedAt = doc.id ? doc.createdAt : null;
+  _convertedFromId  = doc.convertedFromId || null;
   renderBuilder(doc);
   navigate('builder');
 }
@@ -439,6 +442,9 @@ async function saveDoc() {
       notes:           document.getElementById('b-notes').value.trim(),
       totals,
       createdAt:     _editingCreatedAt || new Date().toISOString(),
+      // links a converted receipt to the invoice it settles, so the invoice
+      // stops counting as outstanding and the sale is not counted twice
+      convertedFromId: _convertedFromId,
     };
 
     if (_editingId) doc.id = _editingId;
@@ -481,6 +487,7 @@ async function renderHistory() {
   const db = await getDB();
   _allDocs = await db.getAll('receipts');
   _allDocs.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  indexSettlements();
   const searchEl = document.getElementById('history-search');
   if (searchEl) searchEl.value = '';
   const clearBtn = document.getElementById('search-clear');
@@ -489,7 +496,22 @@ async function renderHistory() {
   renderHistoryCards(_allDocs);
 }
 
+// An invoice that has been converted into a receipt is "settled": the receipt
+// now represents that sale. Derived from the saved links rather than stored on
+// the invoice, so deleting the receipt automatically reopens the invoice.
+let _settledBy = {};   // invoice id → the receipt that settled it
+
+function indexSettlements() {
+  _settledBy = {};
+  for (const d of _allDocs) {
+    if (d.convertedFromId != null) _settledBy[d.convertedFromId] = d;
+  }
+}
+
+function isSettled(d) { return d.id != null && !!_settledBy[d.id]; }
+
 function outstandingOf(d) {
+  if (isSettled(d)) return 0;
   const grand = d.totals?.grandTotal || 0;
   if (d.paymentStatus === 'Unpaid')       return grand;
   if (d.paymentStatus === 'Part-payment') return Math.max(0, grand - (d.amountPaid || 0));
@@ -501,17 +523,19 @@ function renderHistorySummary() {
   if (!el) return;
   if (!_allDocs.length) { el.innerHTML = ''; return; }
 
-  const thisMonth  = new Date().toISOString().slice(0, 7);
-  const monthDocs  = _allDocs.filter(d => (d.date || '').startsWith(thisMonth));
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  // A settled invoice and its receipt are one sale — count only the receipt
+  const billable   = _allDocs.filter(d => !isSettled(d));
+  const monthDocs  = billable.filter(d => (d.date || '').startsWith(thisMonth));
   const monthTotal = monthDocs.reduce((sum, d) => sum + (d.totals?.grandTotal || 0), 0);
-  const outstanding = _allDocs.reduce((sum, d) => sum + outstandingOf(d), 0);
-  const unpaidCount = _allDocs.filter(d => outstandingOf(d) > 0).length;
+  const outstanding = billable.reduce((sum, d) => sum + outstandingOf(d), 0);
+  const unpaidCount = billable.filter(d => outstandingOf(d) > 0).length;
 
   el.innerHTML = `
     <div class="summary-card">
       <div class="summary-item">
         <div class="summary-value">${fmtNaira(monthTotal)}</div>
-        <div class="summary-label">This month · ${monthDocs.length} doc${monthDocs.length === 1 ? '' : 's'}</div>
+        <div class="summary-label">Billed this month · ${monthDocs.length} doc${monthDocs.length === 1 ? '' : 's'}</div>
       </div>
       <div class="summary-item ${outstanding > 0 ? 'summary-warn' : ''}">
         <div class="summary-value">${fmtNaira(outstanding)}</div>
@@ -561,17 +585,21 @@ function renderHistoryCards(docs) {
 
   const today = Date.now();
   list.innerHTML = docs.map(d => {
+    const settled = isSettled(d);
     const sc = (d.paymentStatus || 'Paid').toLowerCase().replace('-', '');
     const bal = outstandingOf(d);
     const ageDays = d.date ? Math.floor((today - new Date(d.date).getTime()) / 86400000) : 0;
     const overdue = d.docType === 'Invoice' && bal > 0 && ageDays > 14;
+    const statusBadge = settled
+      ? `<span class="hc-status status-settled">Settled · ${esc(_settledBy[d.id].number || '')}</span>`
+      : `<span class="hc-status status-${sc}" ${overdue ? 'style="margin-left:6px;"' : ''}>${esc(d.paymentStatus || 'Paid')}</span>`;
     return `
-    <div class="history-card" onclick="openHistoryDoc(${d.id})">
+    <div class="history-card ${settled ? 'hc-settled' : ''}" onclick="openHistoryDoc(${d.id})">
       <div class="hc-top">
         <span class="hc-type ${d.docType.toLowerCase()}">${esc(d.docType)}</span>
         <span class="hc-num">${esc(d.number)}</span>
         ${overdue ? '<span class="hc-status status-overdue">Overdue</span>' : ''}
-        <span class="hc-status status-${sc}" ${overdue ? 'style="margin-left:6px;"' : ''}>${esc(d.paymentStatus || 'Paid')}</span>
+        ${statusBadge}
       </div>
       <div class="hc-client">${esc(d.clientName)}</div>
       <div class="hc-bottom">
@@ -648,6 +676,7 @@ function showDocSheet(doc) {
         <span class="hc-status status-${(doc.paymentStatus||'Paid').toLowerCase().replace('-','')}" style="margin-left:auto;margin-right:12px;">${esc(doc.paymentStatus||'Paid')}</span>
         <button class="pv-close" onclick="closeDocSheet()" aria-label="Close">×</button>
       </div>
+      ${isSettled(doc) ? `<div class="pv-settled">Settled by Receipt ${esc(_settledBy[doc.id].number || '')} — no longer counted as outstanding.</div>` : ''}
       <div class="pv-scroll">
         <div class="pv-paper">
           <img class="pv-logo" src="${typeof makeBracketWLogo === 'function' ? makeBracketWLogo(200) : ''}" alt="" />
@@ -682,7 +711,7 @@ function showDocSheet(doc) {
           <button class="btn btn-outline" style="flex:1;" onclick="duplicateDoc(${doc.id})">Duplicate</button>
           <button class="btn btn-outline" style="flex:1;color:var(--danger);border-color:var(--danger);" onclick="deleteDoc(${doc.id})">Delete</button>
         </div>
-        ${doc.docType === 'Invoice' ? `
+        ${doc.docType === 'Invoice' && !isSettled(doc) ? `
         <button class="btn btn-outline" style="width:100%;margin-top:10px;" onclick="convertToReceipt(${doc.id})">Convert to Receipt</button>` : ''}
       </div>
     </div>
@@ -729,6 +758,7 @@ async function duplicateDoc(id) {
   const s   = getSettings() || {};
   const dup = Object.assign({}, src);
   delete dup.id;
+  delete dup.convertedFromId;  // a copy settles nothing
   dup.number    = genNumber(s);
   dup.date      = new Date().toISOString().slice(0, 10);
   dup.createdAt = new Date().toISOString();
@@ -747,17 +777,22 @@ async function convertToReceipt(id) {
   const db  = await getDB();
   const src = await db.get('receipts', id);
   if (!src) return;
+  if (isSettled(src)) {
+    toast(`Already settled by Receipt ${_settledBy[id].number || ''}`, 'error');
+    return;
+  }
   closeDocSheet();
   const s   = getSettings() || {};
   const rec = Object.assign({}, src);
   delete rec.id;
-  rec.docType       = 'Receipt';
-  rec.number        = genNumber(s);
-  rec.date          = new Date().toISOString().slice(0, 10);
-  rec.createdAt     = new Date().toISOString();
-  rec.paymentStatus = 'Paid';
-  rec.amountPaid    = null;
-  rec.includeTC     = false;
+  rec.docType         = 'Receipt';
+  rec.number          = genNumber(s);
+  rec.date            = new Date().toISOString().slice(0, 10);
+  rec.createdAt       = new Date().toISOString();
+  rec.paymentStatus   = 'Paid';
+  rec.amountPaid      = null;
+  rec.includeTC       = false;
+  rec.convertedFromId = id;   // settles the source invoice once saved
   startEditDoc(rec);
   toast('Converted — review and save', 'success');
 }

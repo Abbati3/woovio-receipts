@@ -74,10 +74,9 @@ async function handleRestoreFile(file) {
 
     const existing = await db.getAll('receipts');
     for (const r of existing) await db.delete('receipts', r.id);
+    // Keep original ids — invoice→receipt settlement links reference them
     for (const r of payload.receipts) {
-      const rec = Object.assign({}, r);
-      delete rec.id;
-      await db.put('receipts', rec);
+      await db.put('receipts', Object.assign({}, r));
     }
 
     await loadSettings();
