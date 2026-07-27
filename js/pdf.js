@@ -94,11 +94,13 @@ async function exportPDF(doc) {
   const itemRows = (doc.items || []).map(it => {
     const qty   = parseFloat(it.qty)       || 0;
     const price = parseFloat(it.unitPrice) || 0;
+    // Descriptive-only rows (no price) print with blank money cells rather than ₦0.00
+    const priced = price > 0;
     return [
       { text: String(qty),       style: 'tCell', alignment: 'center' },
       { text: it.description || '', style: 'tCell' },
-      { text: naira(price),      style: 'tCell', alignment: 'right' },
-      { text: naira(qty * price),style: 'tCell', alignment: 'right' },
+      { text: priced ? naira(price) : '',        style: 'tCell', alignment: 'right' },
+      { text: priced ? naira(qty * price) : '',  style: 'tCell', alignment: 'right' },
     ];
   });
 
@@ -115,6 +117,12 @@ async function exportPDF(doc) {
 
   if (t.discount > 0) {
     totalsRows.push(tb('Discount:', '-' + naira(t.discount), [true, false, true, false]));
+  }
+
+  if (doc.serviceApplied && t.service > 0) {
+    const svcLabel = (doc.serviceLabel || s.serviceLabel || 'Consultation and service charge')
+      + ` (${doc.serviceRate}%):`;
+    totalsRows.push(tb(svcLabel, naira(t.service), [true, false, true, false]));
   }
 
   if (doc.vatApplied && t.vat > 0) {

@@ -1,6 +1,6 @@
 // ── Calculation helpers ────────────────────────────────────────────────────
 
-function calcTotals(items, discountType, discountValue, vatApplied, vatRate) {
+function calcTotals(items, discountType, discountValue, vatApplied, vatRate, serviceApplied, serviceRate) {
   const subtotal = items.reduce((sum, it) => {
     const qty  = parseFloat(it.qty)       || 0;
     const price = parseFloat(it.unitPrice) || 0;
@@ -16,12 +16,18 @@ function calcTotals(items, discountType, discountValue, vatApplied, vatRate) {
   discount = Math.min(discount, subtotal);
 
   const base = subtotal - discount;
-  const vat  = vatApplied ? base * (parseFloat(vatRate) || 0) / 100 : 0;
-  const grandTotal = base + vat;
+
+  // Consultation / service charge — a percentage of the discounted item total
+  const service = serviceApplied ? base * (parseFloat(serviceRate) || 0) / 100 : 0;
+
+  const taxable    = base + service;
+  const vat        = vatApplied ? taxable * (parseFloat(vatRate) || 0) / 100 : 0;
+  const grandTotal = taxable + vat;
 
   return {
     subtotal:   round2(subtotal),
     discount:   round2(discount),
+    service:    round2(service),
     vat:        round2(vat),
     grandTotal: round2(grandTotal)
   };

@@ -123,6 +123,19 @@ function renderBuilder(prefill) {
         </div>
       </div>
 
+      <!-- Service charge -->
+      <div class="field-group">
+        <div class="field-group-label">${esc(s.serviceLabel || 'Consultation / Service Charge')}</div>
+        <div class="field-row toggle-row">
+          <span class="toggle-label">Apply service charge</span>
+          <button class="toggle ${prefill?.serviceApplied ? 'on' : ''}" id="b-service-toggle" onclick="toggleServiceCharge()" aria-pressed="${!!prefill?.serviceApplied}"></button>
+        </div>
+        <div class="field-row" id="service-rate-row" style="${prefill?.serviceApplied ? '' : 'display:none;'}">
+          <label>Rate (%)</label>
+          <input id="b-serviceRate" type="number" min="0" max="100" step="0.1" value="${prefill?.serviceRate ?? (s.serviceRate ?? 10)}" oninput="updateTotals()" />
+        </div>
+      </div>
+
       <!-- VAT -->
       <div class="field-group">
         <div class="field-group-label">Tax</div>
@@ -174,6 +187,7 @@ function renderBuilder(prefill) {
       <div class="totals-card" id="totals-card">
         <div class="totals-row"><span>Subtotal</span><span id="t-subtotal">₦0.00</span></div>
         <div class="totals-row" id="t-discount-row" style="display:none;"><span>Discount</span><span id="t-discount" style="color:var(--danger);">-₦0.00</span></div>
+        <div class="totals-row" id="t-service-row" style="display:none;"><span id="t-service-label">Service charge</span><span id="t-service">₦0.00</span></div>
         <div class="totals-row" id="t-vat-row" style="display:none;"><span>VAT (${s.vatRate||7.5}%)</span><span id="t-vat">₦0.00</span></div>
         <div class="totals-row totals-grand"><span>Total</span><span id="t-grand">₦0.00</span></div>
       </div>
@@ -333,11 +347,23 @@ function updateTotals() {
   const discountValue = document.getElementById('b-discountValue')?.value || 0;
   const vatApplied    = document.getElementById('b-vat-toggle')?.classList.contains('on');
   const vatRate       = s.vatRate || 7.5;
+  const serviceApplied = document.getElementById('b-service-toggle')?.classList.contains('on');
+  const serviceRate    = parseFloat(document.getElementById('b-serviceRate')?.value) || 0;
 
-  const t = calcTotals(items, discountType, discountValue, vatApplied, vatRate);
+  const t = calcTotals(items, discountType, discountValue, vatApplied, vatRate, serviceApplied, serviceRate);
 
   document.getElementById('t-subtotal').textContent = fmtNaira(t.subtotal);
   document.getElementById('t-grand').textContent    = fmtNaira(t.grandTotal);
+
+  const svcRow = document.getElementById('t-service-row');
+  if (serviceApplied) {
+    svcRow.style.display = '';
+    document.getElementById('t-service-label').textContent =
+      `${s.serviceLabel || 'Service charge'} (${serviceRate}%)`;
+    document.getElementById('t-service').textContent = fmtNaira(t.service);
+  } else {
+    svcRow.style.display = 'none';
+  }
 
   const discRow = document.getElementById('t-discount-row');
   if (t.discount > 0) {
@@ -354,6 +380,14 @@ function updateTotals() {
   } else {
     vatRow.style.display = 'none';
   }
+}
+
+function toggleServiceCharge() {
+  const btn = document.getElementById('b-service-toggle');
+  const on  = btn.classList.toggle('on');
+  btn.setAttribute('aria-pressed', on);
+  document.getElementById('service-rate-row').style.display = on ? '' : 'none';
+  updateTotals();
 }
 
 function toggleBuilderVAT() {
@@ -411,11 +445,17 @@ async function saveDoc() {
     const amountPaidVal = parseFloat(document.getElementById('b-amountPaid')?.value) || 0;
     if (amountPaidVal < 0) { toast('Amount paid cannot be negative', 'error'); return; }
 
-    const discountType  = document.getElementById('b-discountType').value;
-    const discountValue = parseFloat(document.getElementById('b-discountValue')?.value) || 0;
-    const vatApplied    = document.getElementById('b-vat-toggle').classList.contains('on');
-    const vatRate       = s.vatRate || 7.5;
-    const totals        = calcTotals(items, discountType, discountValue, vatApplied, vatRate);
+    const serviceRateVal = parseFloat(document.getElementById('b-serviceRate')?.value) || 0;
+    if (serviceRateVal < 0) { toast('Service charge cannot be negative', 'error'); return; }
+
+    const discountType   = document.getElementById('b-discountType').value;
+    const discountValue  = parseFloat(document.getElementById('b-discountValue')?.value) || 0;
+    const vatApplied     = document.getElementById('b-vat-toggle').classList.contains('on');
+    const vatRate        = s.vatRate || 7.5;
+    const serviceApplied = document.getElementById('b-service-toggle').classList.contains('on');
+    const serviceRate    = serviceRateVal;
+    const serviceLabel   = s.serviceLabel || 'Woovio consultation and service charge';
+    const totals         = calcTotals(items, discountType, discountValue, vatApplied, vatRate, serviceApplied, serviceRate);
 
     const doc = {
       docType:       _docType,
@@ -429,6 +469,9 @@ async function saveDoc() {
       discountValue,
       vatApplied,
       vatRate,
+      serviceApplied,
+      serviceRate,
+      serviceLabel,
       paymentStatus:   document.getElementById('b-paymentStatus').value,
       amountPaid:      document.getElementById('b-paymentStatus').value === 'Part-payment'
                          ? (parseFloat(document.getElementById('b-amountPaid')?.value) || 0)
@@ -628,12 +671,15 @@ function showDocSheet(doc) {
 
   const itemRows = (doc.items || []).map(it => {
     const qty = parseFloat(it.qty) || 0, price = parseFloat(it.unitPrice) || 0;
-    return `<tr><td class="pv-c">${qty}</td><td>${esc(it.description||'')}</td><td class="pv-r">${fmtNaira(price)}</td><td class="pv-r">${fmtNaira(qty*price)}</td></tr>`;
+    const priced = price > 0;
+    return `<tr><td class="pv-c">${qty}</td><td>${esc(it.description||'')}</td><td class="pv-r">${priced ? fmtNaira(price) : ''}</td><td class="pv-r">${priced ? fmtNaira(qty*price) : ''}</td></tr>`;
   }).join('');
 
   let totalsHtml = `<tr class="pv-total"><td colspan="3" class="pv-r">Total:</td><td class="pv-r">${fmtNaira(t.subtotal)}</td></tr>`;
   if (t.discount > 0)
     totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">Discount:</td><td class="pv-r">-${fmtNaira(t.discount)}</td></tr>`;
+  if (doc.serviceApplied && t.service > 0)
+    totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">${esc(doc.serviceLabel || s.serviceLabel || 'Service charge')} (${doc.serviceRate}%):</td><td class="pv-r">${fmtNaira(t.service)}</td></tr>`;
   if (doc.vatApplied && t.vat > 0)
     totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">VAT (${doc.vatRate||7.5}%):</td><td class="pv-r">${fmtNaira(t.vat)}</td></tr>`;
   if (isReceipt) {
@@ -833,6 +879,7 @@ window.removeItem       = removeItem;
 window.updateTotals     = updateTotals;
 window.updateLineTotals = updateLineTotals;
 window.toggleBuilderVAT = toggleBuilderVAT;
+window.toggleServiceCharge = toggleServiceCharge;
 window.switchDocType    = switchDocType;
 window.selectStatus     = selectStatus;
 window.saveDoc          = saveDoc;

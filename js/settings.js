@@ -18,6 +18,8 @@ const DEFAULTS = {
   signatureName:    'Yakubu Balami Haruna',
   signatureBase64:  '',
   accountDetails:   'Woovio Interiors (Yakubu Balami Haruna)\nMoniepoint — 7041298889',
+  serviceLabel:     'Woovio consultation and service charge',
+  serviceRate:      10,
 };
 
 let _settings = null;
@@ -105,6 +107,20 @@ function renderSettingsView() {
         <div class="field-row">
           <label>Next Number</label>
           <input id="s-nextNumber" type="number" min="1" value="${s.nextNumber}" />
+        </div>
+      </div>
+
+      <!-- Service charge -->
+      <div class="field-group">
+        <div class="field-group-label">Consultation / Service Charge</div>
+        <p style="font-size:13px;color:var(--muted);padding:0 16px 8px;line-height:1.5;">Defaults used when you switch the service charge on for a document.</p>
+        <div class="field-row">
+          <label>Label</label>
+          <input id="s-serviceLabel" type="text" value="${esc(s.serviceLabel)}" placeholder="Woovio consultation and service charge" />
+        </div>
+        <div class="field-row">
+          <label>Default Rate (%)</label>
+          <input id="s-serviceRate" type="number" min="0" max="100" step="0.1" value="${s.serviceRate}" />
         </div>
       </div>
 
@@ -266,6 +282,8 @@ async function submitSettings() {
     footerNote:      document.getElementById('s-footerNote').value.trim(),
     signatureName:   document.getElementById('s-signatureName').value.trim(),
     accountDetails:  document.getElementById('s-accountDetails').value.trim(),
+    serviceLabel:    document.getElementById('s-serviceLabel').value.trim() || DEFAULTS.serviceLabel,
+    serviceRate:     parseFloat(document.getElementById('s-serviceRate').value) || 0,
   };
 
   await saveSettings(patch);
