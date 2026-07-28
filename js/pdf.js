@@ -95,10 +95,12 @@ async function exportPDF(doc) {
 
   // ── Items rows ─────────────────────────────────────────────────────────────
   const itemRows = (doc.items || []).map((it, i) => {
-    // List-only documents number their rows and carry no per-item money columns
+    // List-only documents number their rows and carry no per-item money columns.
+    // The third column stays empty here and carries the totals further down.
     if (lump) return [
       { text: String(i + 1),        style: 'tCell', alignment: 'center' },
       { text: it.description || '', style: 'tCell' },
+      { text: '',                   style: 'tCell' },
     ];
     const qty   = parseFloat(it.qty)       || 0;
     const price = parseFloat(it.unitPrice) || 0;
@@ -114,7 +116,7 @@ async function exportPDF(doc) {
 
   // ── Totals rows ────────────────────────────────────────────────────────────
   const totalsRows = [];
-  const labelSpan  = lump ? 1 : 3;
+  const labelSpan  = lump ? 2 : 3;
   const tb = (l, r, borders, style) => [
     { text: l, style: style || 'tTotalLabel', colSpan: labelSpan, alignment: 'right',
       border: [borders[0], borders[1], false, borders[3]] },
@@ -236,11 +238,12 @@ async function exportPDF(doc) {
       {
         table: {
           headerRows: 1,
-          widths: lump ? [34, '*'] : [30, '*', 100, 100],
+          widths: lump ? [34, '*', 104] : [30, '*', 100, 100],
           body: [
             lump ? [
               { text: 'No.',         style: 'tHeader', alignment: 'center', border: [true,true,true,true] },
               { text: 'Description', style: 'tHeader',                      border: [true,true,true,true] },
+              { text: '',            style: 'tHeader',                      border: [true,true,true,true] },
             ] : [
               { text: 'Qty',         style: 'tHeader', alignment: 'center', border: [true,true,true,true] },
               { text: 'Description', style: 'tHeader',                      border: [true,true,true,true] },

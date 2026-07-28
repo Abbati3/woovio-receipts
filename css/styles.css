@@ -665,7 +665,7 @@ html, body {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 14px;
+  padding: 14px 14px 22px;
 }
 
 .pv-paper {
@@ -695,28 +695,33 @@ html, body {
 
 .pv-table {
   width: 100%;
+  table-layout: fixed;   /* honour the colgroup widths instead of sizing to content */
   border-collapse: collapse;
   margin: 12px 0;
   font-size: 11px;
 }
+.pv-table td { word-wrap: break-word; overflow-wrap: break-word; }
 .pv-table th {
   background: var(--dark);
   color: #fff;
   padding: 6px 6px;
   text-align: left;
   font-weight: 700;
+  line-height: 1.4;
 }
 .pv-table td {
   border: 0.5px solid #ccc;
   padding: 6px 6px;
   vertical-align: top;
+  /* explicit, so a fallback font for ₦ cannot inflate row heights */
+  line-height: 1.4;
 }
 .pv-c { text-align: center; }
 .pv-r { text-align: right; }
 .pv-total td { border-left: none; border-right: none; }
 .pv-total td:first-child { border-left: 0.5px solid #ccc; }
 .pv-total td:last-child  { border-right: 0.5px solid #ccc; }
-.pv-grand td { font-weight: 800; font-size: 12px; }
+.pv-grand td { font-weight: 700; font-size: 12px; }
 
 .pv-notes { font-size: 10px; color: var(--muted); margin-bottom: 10px; }
 

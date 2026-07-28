@@ -718,16 +718,21 @@ function showDocSheet(doc) {
   const isReceipt = doc.docType === 'Receipt';
   const partPaid  = doc.paymentStatus === 'Part-payment' && doc.amountPaid != null ? doc.amountPaid : null;
 
-  // List-only documents number their rows and carry no per-item money columns
+  // List-only documents number their rows and carry no per-item money columns.
+  // A third, unlabelled column still holds the totals so they align right as usual.
   const lump      = !!doc.lumpSum;
-  const labelSpan = lump ? 1 : 3;
+  const labelSpan = lump ? 2 : 3;
+
+  const colsHtml = lump
+    ? `<col style="width:34px"><col><col style="width:104px">`
+    : `<col style="width:32px"><col><col style="width:78px"><col style="width:84px">`;
 
   const headHtml = lump
-    ? `<tr><th class="pv-c">No.</th><th>Description</th></tr>`
+    ? `<tr><th class="pv-c">No.</th><th>Description</th><th></th></tr>`
     : `<tr><th class="pv-c">Qty</th><th>Description</th><th class="pv-r">Price</th><th class="pv-r">Total</th></tr>`;
 
   const itemRows = (doc.items || []).map((it, i) => {
-    if (lump) return `<tr><td class="pv-c">${i + 1}</td><td>${esc(it.description||'')}</td></tr>`;
+    if (lump) return `<tr><td class="pv-c">${i + 1}</td><td>${esc(it.description||'')}</td><td></td></tr>`;
     const qty = parseFloat(it.qty) || 0, price = parseFloat(it.unitPrice) || 0;
     const priced = price > 0;
     return `<tr><td class="pv-c">${qty}</td><td>${esc(it.description||'')}</td><td class="pv-r">${priced ? fmtNaira(price) : ''}</td><td class="pv-r">${priced ? fmtNaira(qty*price) : ''}</td></tr>`;
@@ -792,6 +797,7 @@ function showDocSheet(doc) {
           <div class="pv-meta"><span>Name: <u>${esc(doc.clientName||'')}</u></span>${doc.clientPhone ? `<span>Contact: <u>${esc(doc.clientPhone)}</u></span>` : ''}</div>
           ${doc.clientAddress ? `<div class="pv-meta"><span>Address: <u>${esc(doc.clientAddress)}</u></span></div>` : ''}
           <table class="pv-table">
+            <colgroup>${colsHtml}</colgroup>
             <thead>${headHtml}</thead>
             <tbody>${itemRows}${totalsHtml}</tbody>
           </table>
