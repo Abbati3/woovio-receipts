@@ -45,6 +45,15 @@ function renderBuilder(prefill) {
 
   const items = prefill ? prefill.items : [{ description: '', qty: 1, unitPrice: '' }];
 
+  // Service charge: documents saved before flat charges existed carry
+  // serviceApplied + serviceRate and were always a percentage
+  const svcType = prefill
+    ? (prefill.serviceType != null ? prefill.serviceType : (prefill.serviceApplied ? 'percent' : 'none'))
+    : 'none';
+  const svcValue = prefill
+    ? (prefill.serviceValue != null ? prefill.serviceValue : (prefill.serviceRate ?? ''))
+    : (s.serviceRate ?? 10);
+
   document.getElementById('view-builder').innerHTML = `
     <div class="page-header" style="display:flex;align-items:center;gap:12px;">
       <button onclick="navigate('new')" style="background:none;border:none;color:#fff;padding:0;cursor:pointer;display:flex;align-items:center;">
@@ -100,9 +109,20 @@ function renderBuilder(prefill) {
       <!-- Line items -->
       <div class="field-group">
         <div class="field-group-label">Items</div>
-        <div id="items-container"></div>
+        <div class="field-row toggle-row">
+          <div>
+            <div class="toggle-label">List only, one total</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px;line-height:1.4;">Number the items with no individual prices, then enter one value for the whole job.</div>
+          </div>
+          <button class="toggle ${prefill?.lumpSum ? 'on' : ''}" id="b-lump-toggle" onclick="toggleLumpSum()" aria-pressed="${!!prefill?.lumpSum}"></button>
+        </div>
+        <div id="items-container" class="${prefill?.lumpSum ? 'lump-mode' : ''}"></div>
         <div style="padding:10px 16px;">
           <button class="btn btn-outline" style="width:100%;height:42px;font-size:14px;" onclick="addItem()">+ Add Item</button>
+        </div>
+        <div class="field-row" id="lump-value-row" style="${prefill?.lumpSum ? '' : 'display:none;'}">
+          <label>Total Value (₦)</label>
+          <input id="b-lumpSumValue" type="number" min="0" step="0.01" value="${prefill?.lumpSumValue||''}" oninput="updateTotals()" placeholder="0.00" />
         </div>
       </div>
 
@@ -127,12 +147,16 @@ function renderBuilder(prefill) {
       <div class="field-group">
         <div class="field-group-label">${esc(s.serviceLabel || 'Consultation / Service Charge')}</div>
         <div class="field-row toggle-row">
-          <span class="toggle-label">Apply service charge</span>
-          <button class="toggle ${prefill?.serviceApplied ? 'on' : ''}" id="b-service-toggle" onclick="toggleServiceCharge()" aria-pressed="${!!prefill?.serviceApplied}"></button>
+          <span class="toggle-label">Type</span>
+          <select id="b-serviceType" data-prev="${svcType}" onchange="onServiceTypeChange()" style="font-size:15px;background:none;border:none;color:var(--dark);font-family:inherit;">
+            <option value="none"    ${svcType==='none'   ?'selected':''}>None</option>
+            <option value="percent" ${svcType==='percent'?'selected':''}>Percent (%)</option>
+            <option value="amount"  ${svcType==='amount' ?'selected':''}>Amount (₦)</option>
+          </select>
         </div>
-        <div class="field-row" id="service-rate-row" style="${prefill?.serviceApplied ? '' : 'display:none;'}">
-          <label>Rate (%)</label>
-          <input id="b-serviceRate" type="number" min="0" max="100" step="0.1" value="${prefill?.serviceRate ?? (s.serviceRate ?? 10)}" oninput="updateTotals()" />
+        <div class="field-row" id="service-value-row" style="${svcType==='none'?'display:none;':''}">
+          <label id="service-value-label">${svcType==='amount' ? 'Charge Amount (₦)' : 'Rate (%)'}</label>
+          <input id="b-serviceValue" type="number" min="0" step="0.01" value="${svcValue}" oninput="updateTotals()" placeholder="0" />
         </div>
       </div>
 
@@ -340,27 +364,36 @@ function getItems() {
 
 // ── Live totals ────────────────────────────────────────────────────────────
 
-function updateTotals() {
-  const s    = getSettings() || {};
-  const items = getItems();
-  const discountType  = document.getElementById('b-discountType')?.value  || 'none';
-  const discountValue = document.getElementById('b-discountValue')?.value || 0;
-  const vatApplied    = document.getElementById('b-vat-toggle')?.classList.contains('on');
-  const vatRate       = s.vatRate || 7.5;
-  const serviceApplied = document.getElementById('b-service-toggle')?.classList.contains('on');
-  const serviceRate    = parseFloat(document.getElementById('b-serviceRate')?.value) || 0;
+// The builder's current state as a document. Both the live totals and the saved
+// record are built from this, so what you see can never differ from what saves.
+function readBuilderDoc() {
+  const s = getSettings() || {};
+  return {
+    items:         getItems(),
+    lumpSum:       !!document.getElementById('b-lump-toggle')?.classList.contains('on'),
+    lumpSumValue:  parseFloat(document.getElementById('b-lumpSumValue')?.value) || 0,
+    discountType:  document.getElementById('b-discountType')?.value || 'none',
+    discountValue: parseFloat(document.getElementById('b-discountValue')?.value) || 0,
+    serviceType:   document.getElementById('b-serviceType')?.value || 'none',
+    serviceValue:  parseFloat(document.getElementById('b-serviceValue')?.value) || 0,
+    serviceLabel:  s.serviceLabel || 'Woovio consultation and service charge',
+    vatApplied:    !!document.getElementById('b-vat-toggle')?.classList.contains('on'),
+    vatRate:       s.vatRate || 7.5,
+  };
+}
 
-  const t = calcTotals(items, discountType, discountValue, vatApplied, vatRate, serviceApplied, serviceRate);
+function updateTotals() {
+  const draft = readBuilderDoc();
+  const t     = calcTotals(draft);
 
   document.getElementById('t-subtotal').textContent = fmtNaira(t.subtotal);
   document.getElementById('t-grand').textContent    = fmtNaira(t.grandTotal);
 
   const svcRow = document.getElementById('t-service-row');
-  if (serviceApplied) {
+  if (draft.serviceType !== 'none') {
     svcRow.style.display = '';
-    document.getElementById('t-service-label').textContent =
-      `${s.serviceLabel || 'Service charge'} (${serviceRate}%)`;
-    document.getElementById('t-service').textContent = fmtNaira(t.service);
+    document.getElementById('t-service-label').textContent = serviceChargeLabel(draft);
+    document.getElementById('t-service').textContent       = fmtNaira(t.service);
   } else {
     svcRow.style.display = 'none';
   }
@@ -374,7 +407,7 @@ function updateTotals() {
   }
 
   const vatRow = document.getElementById('t-vat-row');
-  if (vatApplied) {
+  if (draft.vatApplied) {
     vatRow.style.display = '';
     document.getElementById('t-vat').textContent = fmtNaira(t.vat);
   } else {
@@ -382,11 +415,34 @@ function updateTotals() {
   }
 }
 
-function toggleServiceCharge() {
-  const btn = document.getElementById('b-service-toggle');
+function onServiceTypeChange() {
+  const sel   = document.getElementById('b-serviceType');
+  const type  = sel.value;
+  const prev  = sel.dataset.prev || 'none';
+  const s     = getSettings() || {};
+  const input = document.getElementById('b-serviceValue');
+
+  document.getElementById('service-value-row').style.display = type === 'none' ? 'none' : '';
+  document.getElementById('service-value-label').textContent =
+    type === 'amount' ? 'Charge Amount (₦)' : 'Rate (%)';
+
+  // A rate and a flat figure are different units — carrying the number across
+  // would silently read ₦250,000 as 250,000%
+  if (type !== prev && type !== 'none') {
+    input.value = type === 'percent' ? (s.serviceRate ?? 10) : '';
+  }
+  sel.dataset.prev = type;
+
+  input.max = type === 'percent' ? '100' : '';
+  updateTotals();
+}
+
+function toggleLumpSum() {
+  const btn = document.getElementById('b-lump-toggle');
   const on  = btn.classList.toggle('on');
   btn.setAttribute('aria-pressed', on);
-  document.getElementById('service-rate-row').style.display = on ? '' : 'none';
+  document.getElementById('items-container').classList.toggle('lump-mode', on);
+  document.getElementById('lump-value-row').style.display = on ? '' : 'none';
   updateTotals();
 }
 
@@ -429,49 +485,42 @@ async function saveDoc() {
       return;
     }
 
-    const items = getItems();
-    if (items.every(it => !it.description && !it.unitPrice)) {
-      toast('Add at least one item', 'error'); return;
+    const draft = readBuilderDoc();
+    const items = draft.items;
+
+    if (draft.lumpSum) {
+      if (items.every(it => !it.description)) { toast('Add at least one item', 'error'); return; }
+      if (draft.lumpSumValue <= 0) {
+        toast('Enter the total value for this job', 'error');
+        document.getElementById('b-lumpSumValue').focus();
+        return;
+      }
+    } else {
+      if (items.every(it => !it.description && !it.unitPrice)) {
+        toast('Add at least one item', 'error'); return;
+      }
+      for (const it of items) {
+        if (it.qty < 0)       { toast('Quantity cannot be negative', 'error'); return; }
+        if (it.unitPrice < 0) { toast('Price cannot be negative', 'error'); return; }
+      }
     }
 
-    for (const it of items) {
-      if (it.qty < 0)       { toast('Quantity cannot be negative', 'error'); return; }
-      if (it.unitPrice < 0) { toast('Price cannot be negative', 'error'); return; }
-    }
-
-    const discountVal = parseFloat(document.getElementById('b-discountValue')?.value) || 0;
-    if (discountVal < 0) { toast('Discount cannot be negative', 'error'); return; }
+    if (draft.discountValue < 0) { toast('Discount cannot be negative', 'error'); return; }
+    if (draft.serviceValue  < 0) { toast('Service charge cannot be negative', 'error'); return; }
 
     const amountPaidVal = parseFloat(document.getElementById('b-amountPaid')?.value) || 0;
     if (amountPaidVal < 0) { toast('Amount paid cannot be negative', 'error'); return; }
 
-    const serviceRateVal = parseFloat(document.getElementById('b-serviceRate')?.value) || 0;
-    if (serviceRateVal < 0) { toast('Service charge cannot be negative', 'error'); return; }
-
-    const discountType   = document.getElementById('b-discountType').value;
-    const discountValue  = parseFloat(document.getElementById('b-discountValue')?.value) || 0;
-    const vatApplied     = document.getElementById('b-vat-toggle').classList.contains('on');
-    const vatRate        = s.vatRate || 7.5;
-    const serviceApplied = document.getElementById('b-service-toggle').classList.contains('on');
-    const serviceRate    = serviceRateVal;
-    const serviceLabel   = s.serviceLabel || 'Woovio consultation and service charge';
-    const totals         = calcTotals(items, discountType, discountValue, vatApplied, vatRate, serviceApplied, serviceRate);
+    const totals = calcTotals(draft);
 
     const doc = {
+      ...draft,
       docType:       _docType,
       number:        document.getElementById('b-number').value.trim(),
       clientName,
       clientPhone:   document.getElementById('b-clientPhone').value.trim(),
       clientAddress: document.getElementById('b-clientAddress').value.trim(),
       date:          document.getElementById('b-date').value,
-      items,
-      discountType,
-      discountValue,
-      vatApplied,
-      vatRate,
-      serviceApplied,
-      serviceRate,
-      serviceLabel,
       paymentStatus:   document.getElementById('b-paymentStatus').value,
       amountPaid:      document.getElementById('b-paymentStatus').value === 'Part-payment'
                          ? (parseFloat(document.getElementById('b-amountPaid')?.value) || 0)
@@ -555,7 +604,7 @@ function isSettled(d) { return d.id != null && !!_settledBy[d.id]; }
 
 function outstandingOf(d) {
   if (isSettled(d)) return 0;
-  const grand = d.totals?.grandTotal || 0;
+  const grand = calcTotals(d).grandTotal;
   if (d.paymentStatus === 'Unpaid')       return grand;
   if (d.paymentStatus === 'Part-payment') return Math.max(0, grand - (d.amountPaid || 0));
   return 0;
@@ -570,7 +619,7 @@ function renderHistorySummary() {
   // A settled invoice and its receipt are one sale — count only the receipt
   const billable   = _allDocs.filter(d => !isSettled(d));
   const monthDocs  = billable.filter(d => (d.date || '').startsWith(thisMonth));
-  const monthTotal = monthDocs.reduce((sum, d) => sum + (d.totals?.grandTotal || 0), 0);
+  const monthTotal = monthDocs.reduce((sum, d) => sum + calcTotals(d).grandTotal, 0);
   const outstanding = billable.reduce((sum, d) => sum + outstandingOf(d), 0);
   const unpaidCount = billable.filter(d => outstandingOf(d) > 0).length;
 
@@ -646,7 +695,7 @@ function renderHistoryCards(docs) {
       </div>
       <div class="hc-client">${esc(d.clientName)}</div>
       <div class="hc-bottom">
-        <span class="hc-total">${fmtNaira(d.totals?.grandTotal || 0)}${d.paymentStatus === 'Part-payment' && bal > 0 ? ` <span class="hc-balance">· Bal ${fmtNaira(bal)}</span>` : ''}</span>
+        <span class="hc-total">${fmtNaira(calcTotals(d).grandTotal)}${d.paymentStatus === 'Part-payment' && bal > 0 ? ` <span class="hc-balance">· Bal ${fmtNaira(bal)}</span>` : ''}</span>
         <span class="hc-date">${fmtDate(d.date)}</span>
       </div>
     </div>`;
@@ -662,40 +711,50 @@ async function openHistoryDoc(id) {
 
 function showDocSheet(doc) {
   const s = getSettings() || {};
-  const t = doc.totals || {};
+  const t = calcTotals(doc);
   const existing = document.getElementById('doc-sheet');
   if (existing) existing.remove();
 
   const isReceipt = doc.docType === 'Receipt';
   const partPaid  = doc.paymentStatus === 'Part-payment' && doc.amountPaid != null ? doc.amountPaid : null;
 
-  const itemRows = (doc.items || []).map(it => {
+  // List-only documents number their rows and carry no per-item money columns
+  const lump      = !!doc.lumpSum;
+  const labelSpan = lump ? 1 : 3;
+
+  const headHtml = lump
+    ? `<tr><th class="pv-c">No.</th><th>Description</th></tr>`
+    : `<tr><th class="pv-c">Qty</th><th>Description</th><th class="pv-r">Price</th><th class="pv-r">Total</th></tr>`;
+
+  const itemRows = (doc.items || []).map((it, i) => {
+    if (lump) return `<tr><td class="pv-c">${i + 1}</td><td>${esc(it.description||'')}</td></tr>`;
     const qty = parseFloat(it.qty) || 0, price = parseFloat(it.unitPrice) || 0;
     const priced = price > 0;
     return `<tr><td class="pv-c">${qty}</td><td>${esc(it.description||'')}</td><td class="pv-r">${priced ? fmtNaira(price) : ''}</td><td class="pv-r">${priced ? fmtNaira(qty*price) : ''}</td></tr>`;
   }).join('');
 
-  let totalsHtml = `<tr class="pv-total"><td colspan="3" class="pv-r">Total:</td><td class="pv-r">${fmtNaira(t.subtotal)}</td></tr>`;
-  if (t.discount > 0)
-    totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">Discount:</td><td class="pv-r">-${fmtNaira(t.discount)}</td></tr>`;
-  if (doc.serviceApplied && t.service > 0)
-    totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">${esc(doc.serviceLabel || s.serviceLabel || 'Service charge')} (${doc.serviceRate}%):</td><td class="pv-r">${fmtNaira(t.service)}</td></tr>`;
-  if (doc.vatApplied && t.vat > 0)
-    totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">VAT (${doc.vatRate||7.5}%):</td><td class="pv-r">${fmtNaira(t.vat)}</td></tr>`;
+  const tr = (label, value, cls) =>
+    `<tr class="pv-total${cls ? ' ' + cls : ''}"><td colspan="${labelSpan}" class="pv-r">${label}</td><td class="pv-r">${value}</td></tr>`;
+
+  let totalsHtml = tr('Total:', fmtNaira(t.subtotal));
+  if (t.discount > 0) totalsHtml += tr('Discount:', '-' + fmtNaira(t.discount));
+  if (t.service  > 0) totalsHtml += tr(esc(serviceChargeLabel(doc, s.serviceLabel)) + ':', fmtNaira(t.service));
+  if (doc.vatApplied && t.vat > 0) totalsHtml += tr(`VAT (${doc.vatRate||7.5}%):`, fmtNaira(t.vat));
+
   if (isReceipt) {
     const paid = doc.paymentStatus === 'Paid' ? t.grandTotal : doc.paymentStatus === 'Unpaid' ? 0 : partPaid;
-    totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">Amount Paid:</td><td class="pv-r">${paid !== null ? fmtNaira(paid) : '—'}</td></tr>`;
+    totalsHtml += tr('Amount Paid:', paid !== null ? fmtNaira(paid) : '—');
     const balText = doc.paymentStatus === 'Paid' ? 'Fully paid'
                   : doc.paymentStatus === 'Unpaid' ? fmtNaira(t.grandTotal)
                   : partPaid !== null ? fmtNaira(Math.max(0, t.grandTotal - partPaid)) : 'Part payment';
-    totalsHtml += `<tr class="pv-total pv-grand"><td colspan="3" class="pv-r">Balance due:</td><td class="pv-r">${balText}</td></tr>`;
+    totalsHtml += tr('Balance due:', balText, 'pv-grand');
   } else {
-    totalsHtml += `<tr class="pv-total pv-grand"><td colspan="3" class="pv-r">Grand Total:</td><td class="pv-r">${fmtNaira(t.grandTotal)}</td></tr>`;
+    totalsHtml += tr('Grand Total:', fmtNaira(t.grandTotal), 'pv-grand');
     if (partPaid !== null) {
-      totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">Amount Paid:</td><td class="pv-r">${fmtNaira(partPaid)}</td></tr>`;
-      totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">Balance due:</td><td class="pv-r">${fmtNaira(Math.max(0, t.grandTotal - partPaid))}</td></tr>`;
+      totalsHtml += tr('Amount Paid:', fmtNaira(partPaid));
+      totalsHtml += tr('Balance due:', fmtNaira(Math.max(0, t.grandTotal - partPaid)));
     } else {
-      totalsHtml += `<tr class="pv-total"><td colspan="3" class="pv-r">Status:</td><td class="pv-r">${esc(doc.paymentStatus||'Unpaid')}</td></tr>`;
+      totalsHtml += tr('Status:', esc(doc.paymentStatus||'Unpaid'));
     }
   }
 
@@ -733,7 +792,7 @@ function showDocSheet(doc) {
           <div class="pv-meta"><span>Name: <u>${esc(doc.clientName||'')}</u></span>${doc.clientPhone ? `<span>Contact: <u>${esc(doc.clientPhone)}</u></span>` : ''}</div>
           ${doc.clientAddress ? `<div class="pv-meta"><span>Address: <u>${esc(doc.clientAddress)}</u></span></div>` : ''}
           <table class="pv-table">
-            <thead><tr><th class="pv-c">Qty</th><th>Description</th><th class="pv-r">Price</th><th class="pv-r">Total</th></tr></thead>
+            <thead>${headHtml}</thead>
             <tbody>${itemRows}${totalsHtml}</tbody>
           </table>
           ${acctHtml}
@@ -879,7 +938,8 @@ window.removeItem       = removeItem;
 window.updateTotals     = updateTotals;
 window.updateLineTotals = updateLineTotals;
 window.toggleBuilderVAT = toggleBuilderVAT;
-window.toggleServiceCharge = toggleServiceCharge;
+window.onServiceTypeChange = onServiceTypeChange;
+window.toggleLumpSum       = toggleLumpSum;
 window.switchDocType    = switchDocType;
 window.selectStatus     = selectStatus;
 window.saveDoc          = saveDoc;

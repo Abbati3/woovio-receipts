@@ -1,27 +1,49 @@
 // ── Calculation helpers ────────────────────────────────────────────────────
 
-function calcTotals(items, discountType, discountValue, vatApplied, vatRate, serviceApplied, serviceRate) {
-  const subtotal = items.reduce((sum, it) => {
-    const qty  = parseFloat(it.qty)       || 0;
-    const price = parseFloat(it.unitPrice) || 0;
-    return sum + qty * price;
-  }, 0);
+// Totals are derived from a document, never stored as the source of truth, so
+// every document — however old — renders through the current calculation.
+// Rates come from the document itself, so changing a rate in Settings never
+// rewrites the value of an invoice that was already issued.
+function calcTotals(d) {
+  d = d || {};
+
+  // Legacy documents carry serviceApplied + serviceRate (always a percentage)
+  let serviceType  = d.serviceType;
+  let serviceValue = d.serviceValue;
+  if (serviceType == null) {
+    serviceType  = d.serviceApplied ? 'percent' : 'none';
+    serviceValue = d.serviceRate || 0;
+  }
+
+  // In list-only mode the job carries a single total instead of priced rows
+  const subtotal = d.lumpSum
+    ? (parseFloat(d.lumpSumValue) || 0)
+    : (d.items || []).reduce((sum, it) => {
+        const qty   = parseFloat(it.qty)       || 0;
+        const price = parseFloat(it.unitPrice) || 0;
+        return sum + qty * price;
+      }, 0);
 
   let discount = 0;
-  if (discountType === 'percent') {
-    discount = subtotal * (parseFloat(discountValue) || 0) / 100;
-  } else if (discountType === 'amount') {
-    discount = parseFloat(discountValue) || 0;
+  if (d.discountType === 'percent') {
+    discount = subtotal * (parseFloat(d.discountValue) || 0) / 100;
+  } else if (d.discountType === 'amount') {
+    discount = parseFloat(d.discountValue) || 0;
   }
   discount = Math.min(discount, subtotal);
 
   const base = subtotal - discount;
 
-  // Consultation / service charge — a percentage of the discounted item total
-  const service = serviceApplied ? base * (parseFloat(serviceRate) || 0) / 100 : 0;
+  // Consultation / service charge — a percentage of the discounted total, or a flat figure
+  let service = 0;
+  if (serviceType === 'percent') {
+    service = base * (parseFloat(serviceValue) || 0) / 100;
+  } else if (serviceType === 'amount') {
+    service = parseFloat(serviceValue) || 0;
+  }
 
   const taxable    = base + service;
-  const vat        = vatApplied ? taxable * (parseFloat(vatRate) || 0) / 100 : 0;
+  const vat        = d.vatApplied ? taxable * (parseFloat(d.vatRate) || 0) / 100 : 0;
   const grandTotal = taxable + vat;
 
   return {
@@ -33,6 +55,14 @@ function calcTotals(items, discountType, discountValue, vatApplied, vatRate, ser
   };
 }
 
+// The charge line as it reads on the document, e.g. "… service charge (10%)"
+function serviceChargeLabel(d, fallbackLabel) {
+  const label = d.serviceLabel || fallbackLabel || 'Consultation and service charge';
+  const type  = d.serviceType != null ? d.serviceType : (d.serviceApplied ? 'percent' : 'none');
+  const value = d.serviceValue != null ? d.serviceValue : d.serviceRate;
+  return type === 'percent' ? `${label} (${value}%)` : label;
+}
+
 function round2(n) { return Math.round(n * 100) / 100; }
 
 function fmtNaira(n) {
@@ -41,6 +71,7 @@ function fmtNaira(n) {
 
 function zeroPad(n, len) { return String(n).padStart(len, '0'); }
 
-window.calcTotals = calcTotals;
-window.fmtNaira   = fmtNaira;
-window.zeroPad    = zeroPad;
+window.calcTotals         = calcTotals;
+window.serviceChargeLabel = serviceChargeLabel;
+window.fmtNaira           = fmtNaira;
+window.zeroPad            = zeroPad;

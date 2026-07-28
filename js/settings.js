@@ -113,7 +113,7 @@ function renderSettingsView() {
       <!-- Service charge -->
       <div class="field-group">
         <div class="field-group-label">Consultation / Service Charge</div>
-        <p style="font-size:13px;color:var(--muted);padding:0 16px 8px;line-height:1.5;">Defaults used when you switch the service charge on for a document.</p>
+        <p style="font-size:13px;color:var(--muted);padding:0 16px 8px;line-height:1.5;">Used when you set a document's charge to a percentage. You can also enter a flat figure per document.</p>
         <div class="field-row">
           <label>Label</label>
           <input id="s-serviceLabel" type="text" value="${esc(s.serviceLabel)}" placeholder="Woovio consultation and service charge" />

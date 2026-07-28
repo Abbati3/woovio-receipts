@@ -69,8 +69,11 @@ async function exportPDF(doc) {
   }
 
   const s = getSettings() || {};
-  const t = doc.totals  || {};
+  // Derived, never read from storage, so every document renders through the
+  // current calculation rather than whatever was saved alongside it
+  const t = calcTotals(doc);
   const isReceipt = doc.docType === 'Receipt';
+  const lump      = !!doc.lumpSum;
 
   const BLACK = '#1C1C1C';
   const GREY  = '#555555';
@@ -91,7 +94,12 @@ async function exportPDF(doc) {
   const tagline    = s.tagline         || 'Crafting comfort, Redefining spaces';
 
   // ── Items rows ─────────────────────────────────────────────────────────────
-  const itemRows = (doc.items || []).map(it => {
+  const itemRows = (doc.items || []).map((it, i) => {
+    // List-only documents number their rows and carry no per-item money columns
+    if (lump) return [
+      { text: String(i + 1),        style: 'tCell', alignment: 'center' },
+      { text: it.description || '', style: 'tCell' },
+    ];
     const qty   = parseFloat(it.qty)       || 0;
     const price = parseFloat(it.unitPrice) || 0;
     // Descriptive-only rows (no price) print with blank money cells rather than ₦0.00
@@ -106,9 +114,11 @@ async function exportPDF(doc) {
 
   // ── Totals rows ────────────────────────────────────────────────────────────
   const totalsRows = [];
+  const labelSpan  = lump ? 1 : 3;
   const tb = (l, r, borders, style) => [
-    { text: l, style: style || 'tTotalLabel', colSpan: 3, alignment: 'right',
-      border: [borders[0], borders[1], false, borders[3]] }, {}, {},
+    { text: l, style: style || 'tTotalLabel', colSpan: labelSpan, alignment: 'right',
+      border: [borders[0], borders[1], false, borders[3]] },
+    ...Array(labelSpan - 1).fill({}),
     { text: r, style: style || 'tTotalValue',
       border: [false, borders[1], borders[2], borders[3]] },
   ];
@@ -119,10 +129,8 @@ async function exportPDF(doc) {
     totalsRows.push(tb('Discount:', '-' + naira(t.discount), [true, false, true, false]));
   }
 
-  if (doc.serviceApplied && t.service > 0) {
-    const svcLabel = (doc.serviceLabel || s.serviceLabel || 'Consultation and service charge')
-      + ` (${doc.serviceRate}%):`;
-    totalsRows.push(tb(svcLabel, naira(t.service), [true, false, true, false]));
+  if (t.service > 0) {
+    totalsRows.push(tb(serviceChargeLabel(doc, s.serviceLabel) + ':', naira(t.service), [true, false, true, false]));
   }
 
   if (doc.vatApplied && t.vat > 0) {
@@ -228,9 +236,12 @@ async function exportPDF(doc) {
       {
         table: {
           headerRows: 1,
-          widths: [30, '*', 100, 100],
+          widths: lump ? [34, '*'] : [30, '*', 100, 100],
           body: [
-            [
+            lump ? [
+              { text: 'No.',         style: 'tHeader', alignment: 'center', border: [true,true,true,true] },
+              { text: 'Description', style: 'tHeader',                      border: [true,true,true,true] },
+            ] : [
               { text: 'Qty',         style: 'tHeader', alignment: 'center', border: [true,true,true,true] },
               { text: 'Description', style: 'tHeader',                      border: [true,true,true,true] },
               { text: 'Price',       style: 'tHeader', alignment: 'right',  border: [true,true,true,true] },

@@ -725,6 +725,23 @@ html, body {
 .pv-sigline { width: 160px; border-bottom: 1px solid #ccc; height: 22px; margin-bottom: 3px; }
 .pv-signame { text-decoration: underline; text-underline-offset: 2px; }
 
+/* List-only mode: rows are numbered and carry no price fields.
+   A CSS counter keeps the numbering correct as rows are added or removed. */
+#items-container.lump-mode { counter-reset: itemno; }
+#items-container.lump-mode .item-row { counter-increment: itemno; }
+#items-container.lump-mode .item-row-nums { display: none; }
+#items-container.lump-mode .item-row-top {
+  margin-bottom: 0;
+}
+#items-container.lump-mode .item-row-top::before {
+  content: counter(itemno) ".";
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 20px;
+  flex-shrink: 0;
+}
+
 .pv-acct { margin: 0 0 12px; font-size: 11px; line-height: 1.5; }
 
 .pv-tc { border-top: 1px dashed #ccc; margin-top: 18px; padding-top: 14px; font-size: 10.5px; }
