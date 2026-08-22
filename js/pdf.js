@@ -163,8 +163,7 @@ async function exportPDF(doc) {
   }
 
   // ── Footer lines ───────────────────────────────────────────────────────────
-  const addrLines = (s.address || '').split('\n').filter(Boolean);
-  const footerParts = [...addrLines, s.phone, s.email].filter(Boolean);
+  const footerParts = documentFooterParts(s);
 
   // ── Signature block ────────────────────────────────────────────────────────
   const sigBlock = sigImg

@@ -763,7 +763,7 @@ function showDocSheet(doc) {
     }
   }
 
-  const addrLine = (s.address || '').split('\n').filter(Boolean).join(' · ');
+  const footerLine = documentFooterParts(s).join('  ·  ');
   const acctHtml = !isReceipt && s.accountDetails ? `
     <div class="pv-acct">
       <div class="pv-tc-head">Account Details</div>
@@ -809,7 +809,7 @@ function showDocSheet(doc) {
             <div class="pv-signame">${esc(s.signatureName || '')}</div>
           </div>
           ${tcHtml}
-          <div class="pv-footer">${esc(addrLine)}${s.phone ? ' · ' + esc(s.phone) : ''}</div>
+          <div class="pv-footer">${esc(footerLine)}</div>
         </div>
       </div>
       <div class="pv-actions">

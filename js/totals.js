@@ -63,6 +63,34 @@ function serviceChargeLabel(d, fallbackLabel) {
   return type === 'percent' ? `${label} (${value}%)` : label;
 }
 
+// ── Document identity ──────────────────────────────────────────────────────
+
+// A website reads better on paper without its protocol or trailing slash
+function fmtWebsite(url) {
+  return (url || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+}
+
+// The identity line at the foot of every document. Built in one place so the
+// on-screen preview and the PDF can never drift apart.
+function documentFooterParts(s) {
+  s = s || {};
+  // A line's trailing comma reads as a stray mark once the separator follows it
+  const parts = (s.address || '').split('\n')
+    .map(x => x.trim().replace(/,$/, ''))
+    .filter(Boolean);
+  if (s.phone) parts.push(s.phone);
+  if (s.email) parts.push(s.email);
+
+  const web = fmtWebsite(s.website);
+  if (web) parts.push(web);
+
+  // Accepts "8519204" or "RC 8519204" without printing "RC RC ..."
+  const rc = (s.rcNumber || '').trim().replace(/^RC[:\s]*/i, '');
+  if (rc) parts.push('RC ' + rc);
+
+  return parts;
+}
+
 function round2(n) { return Math.round(n * 100) / 100; }
 
 function fmtNaira(n) {
@@ -71,7 +99,9 @@ function fmtNaira(n) {
 
 function zeroPad(n, len) { return String(n).padStart(len, '0'); }
 
-window.calcTotals         = calcTotals;
-window.serviceChargeLabel = serviceChargeLabel;
+window.calcTotals           = calcTotals;
+window.serviceChargeLabel   = serviceChargeLabel;
+window.fmtWebsite           = fmtWebsite;
+window.documentFooterParts  = documentFooterParts;
 window.fmtNaira           = fmtNaira;
 window.zeroPad            = zeroPad;

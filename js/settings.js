@@ -9,6 +9,8 @@ const DEFAULTS = {
   address:          'Dubai-Abuja International Trade center,\nTOS Douglas Cres, Kaura, Abuja.',
   phone:            '+2348122837980',
   email:            '',
+  website:          'wooviointeriors.com',
+  rcNumber:         '',
   logoBase64:       '',
   numberPrefix:     'WV-2026-',
   nextNumber:       1,
@@ -94,6 +96,14 @@ function renderSettingsView() {
         <div class="field-row">
           <label>Email (optional)</label>
           <input id="s-email" type="email" value="${esc(s.email)}" placeholder="info@woovio.com" />
+        </div>
+        <div class="field-row">
+          <label>Website (optional)</label>
+          <input id="s-website" type="text" value="${esc(s.website)}" placeholder="wooviointeriors.com" autocapitalize="off" autocorrect="off" />
+        </div>
+        <div class="field-row">
+          <label>RC Number (optional)</label>
+          <input id="s-rcNumber" type="text" value="${esc(s.rcNumber)}" placeholder="8519204" autocapitalize="off" />
         </div>
       </div>
 
@@ -275,6 +285,8 @@ async function submitSettings() {
     address:       document.getElementById('s-address').value.trim(),
     phone:         document.getElementById('s-phone').value.trim(),
     email:         document.getElementById('s-email').value.trim(),
+    website:       document.getElementById('s-website').value.trim(),
+    rcNumber:      document.getElementById('s-rcNumber').value.trim(),
     numberPrefix:  document.getElementById('s-prefix').value.trim(),
     nextNumber:    Math.max(1, parseInt(document.getElementById('s-nextNumber').value) || 1),
     vatEnabled:    document.getElementById('vat-toggle').classList.contains('on'),
