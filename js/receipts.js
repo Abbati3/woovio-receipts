@@ -31,8 +31,16 @@ window.startEditDoc = startEditDoc;
 
 // ── Number generation ──────────────────────────────────────────────────────
 
-function genNumber(s) {
-  return (s.numberPrefix || '') + zeroPad(s.nextNumber || 1, 4);
+// Each document type draws from its own sequence
+function numberFieldFor(docType) {
+  return docType === 'Receipt'
+    ? { prefix: 'receiptPrefix', next: 'receiptNextNumber' }
+    : { prefix: 'invoicePrefix', next: 'invoiceNextNumber' };
+}
+
+function genNumber(s, docType) {
+  const f = numberFieldFor(docType || _docType);
+  return (s[f.prefix] || '') + zeroPad(s[f.next] || 1, 4);
 }
 
 // ── Render builder ─────────────────────────────────────────────────────────
@@ -40,7 +48,7 @@ function genNumber(s) {
 function renderBuilder(prefill) {
   const s    = getSettings() || {};
   const isNew = !prefill;
-  const docNum = isNew ? genNumber(s) : prefill.number;
+  const docNum = isNew ? genNumber(s, _docType) : prefill.number;
   const today  = new Date().toISOString().slice(0, 10);
 
   const items = prefill ? prefill.items : [{ description: '', qty: 1, unitPrice: '' }];
@@ -461,6 +469,16 @@ function switchDocType(type) {
     (_editingId ? 'Edit ' : 'New ') + type;
   const pg = document.getElementById('production-group');
   if (pg) pg.style.display = type === 'Invoice' ? '' : 'none';
+
+  // The number belongs to the sequence of the chosen type. An existing document
+  // keeps the number it was issued under.
+  if (!_editingId) {
+    const num = genNumber(getSettings() || {}, type);
+    const numEl = document.getElementById('b-number');
+    if (numEl) numEl.value = num;
+    const sub = document.querySelector('#view-builder .subtitle');
+    if (sub) sub.textContent = num;
+  }
 }
 
 function selectStatus(status, btn) {
@@ -551,7 +569,9 @@ async function saveDoc() {
     await db.put('receipts', doc);
 
     if (!_editingId) {
-      await saveSettings({ nextNumber: (s.nextNumber || 1) + 1 });
+      // Advance only the sequence this document type draws from
+      const nextField = numberFieldFor(_docType).next;
+      await saveSettings({ [nextField]: (s[nextField] || 1) + 1 });
     }
 
     toast(_docType + (_editingId ? ' updated ✓' : ' saved ✓'), 'success');
@@ -870,7 +890,7 @@ async function duplicateDoc(id) {
   const dup = Object.assign({}, src);
   delete dup.id;
   delete dup.convertedFromId;  // a copy settles nothing
-  dup.number    = genNumber(s);
+  dup.number    = genNumber(s, dup.docType);
   dup.date      = new Date().toISOString().slice(0, 10);
   dup.createdAt = new Date().toISOString();
   startEditDoc(dup);
@@ -897,7 +917,7 @@ async function convertToReceipt(id) {
   const rec = Object.assign({}, src);
   delete rec.id;
   rec.docType         = 'Receipt';
-  rec.number          = genNumber(s);
+  rec.number          = genNumber(s, 'Receipt');
   rec.date            = new Date().toISOString().slice(0, 10);
   rec.createdAt       = new Date().toISOString();
   rec.paymentStatus   = 'Paid';

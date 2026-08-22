@@ -12,8 +12,11 @@ const DEFAULTS = {
   website:          'wooviointeriors.com',
   rcNumber:         '',
   logoBase64:       '',
-  numberPrefix:     'WV-2026-',
-  nextNumber:       1,
+  // Receipts and invoices run independent sequences so one never advances the other
+  invoicePrefix:     'WV-2026-',
+  invoiceNextNumber: 1,
+  receiptPrefix:     'WV-2026-R-',
+  receiptNextNumber: 1,
   vatEnabled:       false,
   vatRate:          7.5,
   footerNote:       'Thank you for choosing Woovio Interiors!',
@@ -30,6 +33,20 @@ async function loadSettings() {
   const db = await getDB();
   const saved = await db.get('settings', SETTINGS_KEY);
   _settings = Object.assign({}, DEFAULTS, saved || {});
+
+  // One shared counter used to serve both document types, so issuing a receipt
+  // advanced the invoice sequence. Split it, keeping the invoice series exactly
+  // where it was and starting receipts from the same point so neither can
+  // reissue a number that has already gone out.
+  if (saved && saved.numberPrefix != null && saved.invoicePrefix == null) {
+    const n = Math.max(1, parseInt(saved.nextNumber) || 1);
+    _settings.invoicePrefix     = saved.numberPrefix;
+    _settings.invoiceNextNumber = n;
+    _settings.receiptPrefix     = saved.numberPrefix + 'R-';
+    _settings.receiptNextNumber = n;
+    await db.put('settings', _settings);
+  }
+
   return _settings;
 }
 
@@ -110,13 +127,22 @@ function renderSettingsView() {
       <!-- Numbering -->
       <div class="field-group">
         <div class="field-group-label">Document Numbering</div>
+        <p style="font-size:13px;color:var(--muted);padding:0 16px 8px;line-height:1.5;">Invoices and receipts run separate sequences, so issuing one never advances the other.</p>
         <div class="field-row">
-          <label>Number Prefix</label>
-          <input id="s-prefix" type="text" value="${esc(s.numberPrefix)}" placeholder="WV-2026-" />
+          <label>Invoice Prefix</label>
+          <input id="s-invoicePrefix" type="text" value="${esc(s.invoicePrefix)}" placeholder="WV-2026-" autocapitalize="off" />
         </div>
         <div class="field-row">
-          <label>Next Number</label>
-          <input id="s-nextNumber" type="number" min="1" value="${s.nextNumber}" />
+          <label>Next Invoice Number</label>
+          <input id="s-invoiceNextNumber" type="number" min="1" value="${s.invoiceNextNumber}" />
+        </div>
+        <div class="field-row">
+          <label>Receipt Prefix</label>
+          <input id="s-receiptPrefix" type="text" value="${esc(s.receiptPrefix)}" placeholder="WV-2026-R-" autocapitalize="off" />
+        </div>
+        <div class="field-row">
+          <label>Next Receipt Number</label>
+          <input id="s-receiptNextNumber" type="number" min="1" value="${s.receiptNextNumber}" />
         </div>
       </div>
 
@@ -287,8 +313,10 @@ async function submitSettings() {
     email:         document.getElementById('s-email').value.trim(),
     website:       document.getElementById('s-website').value.trim(),
     rcNumber:      document.getElementById('s-rcNumber').value.trim(),
-    numberPrefix:  document.getElementById('s-prefix').value.trim(),
-    nextNumber:    Math.max(1, parseInt(document.getElementById('s-nextNumber').value) || 1),
+    invoicePrefix:     document.getElementById('s-invoicePrefix').value.trim(),
+    invoiceNextNumber: Math.max(1, parseInt(document.getElementById('s-invoiceNextNumber').value) || 1),
+    receiptPrefix:     document.getElementById('s-receiptPrefix').value.trim(),
+    receiptNextNumber: Math.max(1, parseInt(document.getElementById('s-receiptNextNumber').value) || 1),
     vatEnabled:    document.getElementById('vat-toggle').classList.contains('on'),
     vatRate:       parseFloat(document.getElementById('s-vatRate')?.value) || 7.5,
     footerNote:      document.getElementById('s-footerNote').value.trim(),
