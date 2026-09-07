@@ -203,35 +203,43 @@ async function exportPDF(doc) {
     },
 
     content: [
-      // Logo (bracket-W)
-      { image: 'wlogo', width: 80, alignment: 'center', margin: [0, 0, 0, 0] },
-      // Business name + tagline
-      { text: bizName, style: 'bizName' },
-      { text: tagline, style: 'tagline' },
-      // Doc type heading
-      { text: doc.docType.toUpperCase(), style: 'docType' },
-      // Date / number
+      // Letterhead + client details as one block: on a full page this always
+      // fits, so grouping it costs nothing, and it guarantees the heading
+      // can never be separated from the date/number/client lines beneath it.
       {
-        columns: [
-          { text: ['Date:  ', ul(fmtD(doc.date))],           style: 'label', width: '*' },
-          { text: [doc.docType + ' No: ', ul(doc.number||'')], style: 'label', alignment: 'right', width: '*' },
+        unbreakable: true,
+        stack: [
+          // Logo (bracket-W)
+          { image: 'wlogo', width: 80, alignment: 'center', margin: [0, 0, 0, 0] },
+          // Business name + tagline
+          { text: bizName, style: 'bizName' },
+          { text: tagline, style: 'tagline' },
+          // Doc type heading
+          { text: doc.docType.toUpperCase(), style: 'docType' },
+          // Date / number
+          {
+            columns: [
+              { text: ['Date:  ', ul(fmtD(doc.date))],           style: 'label', width: '*' },
+              { text: [doc.docType + ' No: ', ul(doc.number||'')], style: 'label', alignment: 'right', width: '*' },
+            ],
+            margin: [0, 0, 0, 6],
+          },
+          // Client name / phone
+          {
+            columns: [
+              { text: ['Name:  ', ul(doc.clientName || '')], style: 'label', width: '*' },
+              doc.clientPhone
+                ? { text: ['Contact No: ', ul(doc.clientPhone)], style: 'label', alignment: 'right', width: '*' }
+                : { text: '', width: '*' },
+            ],
+            margin: [0, 0, 0, 4],
+          },
+          // Address
+          doc.clientAddress
+            ? { text: ['Address: ', ul(doc.clientAddress)], style: 'label', margin: [0, 0, 0, 14] }
+            : { text: '', margin: [0, 0, 0, 14] },
         ],
-        margin: [0, 0, 0, 6],
       },
-      // Client name / phone
-      {
-        columns: [
-          { text: ['Name:  ', ul(doc.clientName || '')], style: 'label', width: '*' },
-          doc.clientPhone
-            ? { text: ['Contact No: ', ul(doc.clientPhone)], style: 'label', alignment: 'right', width: '*' }
-            : { text: '', width: '*' },
-        ],
-        margin: [0, 0, 0, 4],
-      },
-      // Address
-      doc.clientAddress
-        ? { text: ['Address: ', ul(doc.clientAddress)], style: 'label', margin: [0, 0, 0, 14] }
-        : { text: '', margin: [0, 0, 0, 14] },
 
       // Items table
       {
@@ -262,17 +270,27 @@ async function exportPDF(doc) {
         margin: [0, 0, 0, 14],
       },
 
-      // Payment account details (invoices — always shown, page 1)
-      ...(!isReceipt && s.accountDetails ? [
-        { text: 'Account Details', fontSize: 11, bold: true, margin: [0, 0, 0, 4] },
-        { text: s.accountDetails, fontSize: 10, margin: [0, 0, 0, 12] },
-      ] : []),
-
-      // Notes
-      ...(doc.notes ? [{ text: doc.notes, fontSize: 9, color: GREY, margin: [0, 0, 0, 8] }] : []),
-
-      // Signature
-      ...sigBlock,
+      // Account details, notes and the signature as one unbreakable block.
+      // Previously these were separate content items, so pdfmake could split
+      // a page between the "Authorized Signature:" label and the image below
+      // it — or between the label and its underlined name — whenever the
+      // items table left just enough room to start the block but not finish
+      // it. Now the whole block moves to the next page together if it
+      // doesn't fit, rather than breaking apart mid-block.
+      {
+        unbreakable: true,
+        stack: [
+          // Payment account details (invoices — always shown, page 1)
+          ...(!isReceipt && s.accountDetails ? [
+            { text: 'Account Details', fontSize: 11, bold: true, margin: [0, 0, 0, 4] },
+            { text: s.accountDetails, fontSize: 10, margin: [0, 0, 0, 12] },
+          ] : []),
+          // Notes
+          ...(doc.notes ? [{ text: doc.notes, fontSize: 9, color: GREY, margin: [0, 0, 0, 8] }] : []),
+          // Signature
+          ...sigBlock,
+        ],
+      },
 
       // Terms & Conditions (invoice only, when toggled on)
       ...(!isReceipt && doc.includeTC ? [

@@ -630,25 +630,43 @@ function outstandingOf(d) {
   return 0;
 }
 
+// Tap the billed-total tile to cycle between this month and all-time — the
+// choice persists across visits to History.
+function toggleSummaryPeriod() {
+  const cur = localStorage.getItem('summaryPeriod') || 'month';
+  localStorage.setItem('summaryPeriod', cur === 'month' ? 'lifetime' : 'month');
+  renderHistorySummary();
+}
+window.toggleSummaryPeriod = toggleSummaryPeriod;
+
 function renderHistorySummary() {
   const el = document.getElementById('history-summary');
   if (!el) return;
   if (!_allDocs.length) { el.innerHTML = ''; return; }
 
-  const thisMonth = new Date().toISOString().slice(0, 7);
   // A settled invoice and its receipt are one sale — count only the receipt
-  const billable   = _allDocs.filter(d => !isSettled(d));
-  const monthDocs  = billable.filter(d => (d.date || '').startsWith(thisMonth));
-  const monthTotal = monthDocs.reduce((sum, d) => sum + calcTotals(d).grandTotal, 0);
+  const billable    = _allDocs.filter(d => !isSettled(d));
   const outstanding = billable.reduce((sum, d) => sum + outstandingOf(d), 0);
   const unpaidCount = billable.filter(d => outstandingOf(d) > 0).length;
 
+  const period = localStorage.getItem('summaryPeriod') || 'month';
+  let periodDocs, periodLabel;
+  if (period === 'lifetime') {
+    periodDocs  = billable;
+    periodLabel = 'Billed lifetime';
+  } else {
+    const thisMonth = new Date().toISOString().slice(0, 7);
+    periodDocs  = billable.filter(d => (d.date || '').startsWith(thisMonth));
+    periodLabel = 'Billed this month';
+  }
+  const periodTotal = periodDocs.reduce((sum, d) => sum + calcTotals(d).grandTotal, 0);
+
   el.innerHTML = `
     <div class="summary-card">
-      <div class="summary-item">
-        <div class="summary-value">${fmtNaira(monthTotal)}</div>
-        <div class="summary-label">Billed this month · ${monthDocs.length} doc${monthDocs.length === 1 ? '' : 's'}</div>
-      </div>
+      <button type="button" class="summary-item summary-tap" onclick="toggleSummaryPeriod()">
+        <div class="summary-value">${fmtNaira(periodTotal)}</div>
+        <div class="summary-label">${periodLabel} · ${periodDocs.length} doc${periodDocs.length === 1 ? '' : 's'} <span class="summary-switch">⇄</span></div>
+      </button>
       <div class="summary-item ${outstanding > 0 ? 'summary-warn' : ''}">
         <div class="summary-value">${fmtNaira(outstanding)}</div>
         <div class="summary-label">Outstanding · ${unpaidCount} unpaid</div>
