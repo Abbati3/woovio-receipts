@@ -28,6 +28,18 @@ html, body {
 }
 
 
+/* Opaque backdrop for the translucent iOS status bar. The page shows through
+   it in standalone mode, and white status text over light content is
+   unreadable — so this strip stays put even though the header scrolls away. */
+#status-shade {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--safe-top);
+  background: var(--dark);
+  z-index: 60;
+  pointer-events: none;
+}
+
 /* ── App shell ── */
 #app {
   display: flex;
@@ -91,11 +103,10 @@ html, body {
 .page-header {
   background: var(--dark);
   color: #fff;
-  padding: 20px 20px 16px;
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  padding-top: max(20px, calc(var(--safe-top) + 8px));
+  /* Scrolls away with the content instead of holding its height throughout.
+     No safe-area padding: #view-container already accounts for it, and adding
+     it again cost a Dynamic Island phone about 59px on every screen. */
+  padding: 14px 20px 14px;
 }
 
 .page-header h1 {
@@ -113,8 +124,8 @@ html, body {
 /* ── Woovio logo block (splash/home) ── */
 .brand-block {
   text-align: center;
-  padding: 40px 24px 32px;
-  padding-top: max(40px, calc(var(--safe-top) + 24px));
+  /* Same as the header: the container already offsets the safe area */
+  padding: 30px 24px 28px;
   background: var(--dark);
   color: #fff;
 }
