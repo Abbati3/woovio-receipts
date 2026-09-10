@@ -63,6 +63,29 @@ function serviceChargeLabel(d, fallbackLabel) {
   return type === 'percent' ? `${label} (${value}%)` : label;
 }
 
+// ── Calendar dates ─────────────────────────────────────────────────────────
+//
+// Local, not UTC. toISOString() would stamp anything recorded between local
+// midnight and 01:00 in Nigeria with the previous day's date — so a receipt
+// written just after midnight would be dated yesterday.
+
+function todayISO() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function monthISO() { return todayISO().slice(0, 7); }
+
+// Whole days since a YYYY-MM-DD date, counted from local midnight.
+// new Date('2026-09-10') would parse as UTC midnight and skew the count.
+function daysSinceISO(iso) {
+  if (!iso) return 0;
+  const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return 0;
+  return Math.floor((Date.now() - new Date(y, m - 1, d).getTime()) / 86400000);
+}
+
 // ── Document identity ──────────────────────────────────────────────────────
 
 // A website reads better on paper without its protocol or trailing slash
@@ -103,5 +126,8 @@ window.calcTotals           = calcTotals;
 window.serviceChargeLabel   = serviceChargeLabel;
 window.fmtWebsite           = fmtWebsite;
 window.documentFooterParts  = documentFooterParts;
+window.todayISO             = todayISO;
+window.monthISO             = monthISO;
+window.daysSinceISO         = daysSinceISO;
 window.fmtNaira           = fmtNaira;
 window.zeroPad            = zeroPad;

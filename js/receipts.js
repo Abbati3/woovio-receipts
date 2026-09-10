@@ -49,7 +49,7 @@ function renderBuilder(prefill) {
   const s    = getSettings() || {};
   const isNew = !prefill;
   const docNum = isNew ? genNumber(s, _docType) : prefill.number;
-  const today  = new Date().toISOString().slice(0, 10);
+  const today  = todayISO();
 
   const items = prefill ? prefill.items : [{ description: '', qty: 1, unitPrice: '' }];
 
@@ -655,7 +655,7 @@ function renderHistorySummary() {
     periodDocs  = billable;
     periodLabel = 'Billed lifetime';
   } else {
-    const thisMonth = new Date().toISOString().slice(0, 7);
+    const thisMonth = monthISO();
     periodDocs  = billable.filter(d => (d.date || '').startsWith(thisMonth));
     periodLabel = 'Billed this month';
   }
@@ -713,12 +713,11 @@ function renderHistoryCards(docs) {
   }
   noResults.style.display = 'none';
 
-  const today = Date.now();
   list.innerHTML = docs.map(d => {
     const settled = isSettled(d);
     const sc = (d.paymentStatus || 'Paid').toLowerCase().replace('-', '');
     const bal = outstandingOf(d);
-    const ageDays = d.date ? Math.floor((today - new Date(d.date).getTime()) / 86400000) : 0;
+    const ageDays = daysSinceISO(d.date);
     const overdue = d.docType === 'Invoice' && bal > 0 && ageDays > 14;
     const statusBadge = settled
       ? `<span class="hc-status status-settled">Settled · ${esc(_settledBy[d.id].number || '')}</span>`
@@ -909,7 +908,7 @@ async function duplicateDoc(id) {
   delete dup.id;
   delete dup.convertedFromId;  // a copy settles nothing
   dup.number    = genNumber(s, dup.docType);
-  dup.date      = new Date().toISOString().slice(0, 10);
+  dup.date      = todayISO();
   dup.createdAt = new Date().toISOString();
   startEditDoc(dup);
 }
@@ -936,7 +935,7 @@ async function convertToReceipt(id) {
   delete rec.id;
   rec.docType         = 'Receipt';
   rec.number          = genNumber(s, 'Receipt');
-  rec.date            = new Date().toISOString().slice(0, 10);
+  rec.date            = todayISO();
   rec.createdAt       = new Date().toISOString();
   rec.paymentStatus   = 'Paid';
   rec.amountPaid      = null;

@@ -16,7 +16,7 @@ async function backupData() {
 
     const json     = JSON.stringify(payload, null, 2);
     const blob     = new Blob([json], { type: 'application/json' });
-    const date     = new Date().toISOString().slice(0, 10);
+    const date     = todayISO();
     const filename = `woovio-backup-${date}.json`;
 
     // iOS standalone PWA: blob URL + a.click() is blocked; use Web Share API
