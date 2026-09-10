@@ -70,7 +70,7 @@ function renderSettingsView() {
   document.getElementById('view-settings').innerHTML = `
     <div class="page-header">
       <h1>Settings</h1>
-      <div class="subtitle">Business info &amp; preferences</div>
+      <div class="subtitle" id="settings-version">Business info &amp; preferences</div>
     </div>
 
     <div class="settings-list">
@@ -254,6 +254,8 @@ function renderSettingsView() {
       <div style="height:8px;"></div>
     </div>
   `;
+
+  showVersion('settings-version');
 }
 
 function esc(str) {

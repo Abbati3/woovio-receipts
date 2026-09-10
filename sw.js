@@ -1,4 +1,4 @@
-const CACHE = 'woovio-v45';
+const CACHE = 'woovio-v46';
 
 // Critical app files — cached immediately on install
 const PRECACHE = [
