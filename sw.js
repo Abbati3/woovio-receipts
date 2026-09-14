@@ -1,6 +1,11 @@
-const CACHE = 'woovio-v47';
+const CACHE = 'woovio-v48';
 
-// Critical app files — cached immediately on install
+// The PDF engine and its fonts (about 1.7MB) live in their own cache that
+// survives updates. They download once, not again with every version, and a PDF
+// can still be made offline straight after an update. Bump this name only if
+// those two files ever change.
+const LIB_CACHE = 'woovio-libs-v1';
+
 const PRECACHE = [
   'index.html',
   'manifest.webmanifest',
@@ -17,62 +22,54 @@ const PRECACHE = [
   'assets/icon-512.png'
 ];
 
-// Large libs — cached on first successful fetch (runtime caching)
-const RUNTIME_CACHE = [
+const LIBS = [
   'lib/pdfmake.min.js',
   'lib/vfs_fonts.js',
 ];
 
-let offlineMode = false;
-
-self.addEventListener('message', e => {
-  if (e.data && e.data.type === 'SET_OFFLINE_MODE') {
-    offlineMode = e.data.value;
-  }
-});
+// Files come from the cache first, so the app opens instantly with or without a
+// connection. Updates never pass through the fetch handler: the browser fetches
+// sw.js itself to look for a new version, and a new worker's install bypasses it
+// — so no switch to block the network is needed, and none is offered.
 
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE)
-      // cache:'reload' bypasses the browser HTTP cache so a new SW version
-      // always precaches genuinely fresh files, never stale cached copies
-      .then(c => c.addAll(PRECACHE.map(u => new Request(u, { cache: 'reload' }))))
-      .then(() => self.skipWaiting())
-  );
+  e.waitUntil((async () => {
+    const core = await caches.open(CACHE);
+    // cache:'reload' bypasses the browser HTTP cache so a new version always
+    // precaches genuinely fresh files, never stale copies
+    await core.addAll(PRECACHE.map(u => new Request(u, { cache: 'reload' })));
+
+    // Fetched only if this device does not already hold them
+    const libs = await caches.open(LIB_CACHE);
+    for (const u of LIBS) {
+      if (!(await libs.match(u))) await libs.add(new Request(u, { cache: 'reload' }));
+    }
+    // If anything above failed, the install fails as a whole and the version
+    // already running carries on untouched — a half-downloaded update never lands.
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      // The shoes app shares this origin's cache storage, so only this app's own
+      // old versions are removed — never the shoes app's, and never the libraries.
+      .then(keys => Promise.all(keys
+        .filter(k => k.startsWith('woovio-') && k !== CACHE && k !== LIB_CACHE)
+        .map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', e => {
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-
-      // Not in cache — check if this is a large lib we should cache at runtime
-      const url = new URL(e.request.url);
-      const isRuntimeFile = RUNTIME_CACHE.some(f => url.pathname.endsWith(f));
-
-      if (offlineMode && !isRuntimeFile) {
-        // Cache-only mode: return offline error for non-lib requests
-        return new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } });
+    caches.match(e.request).then(cached => cached || fetch(e.request).then(response => {
+      if (response.ok && e.request.method === 'GET') {
+        const clone = response.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
       }
-
-      // Fetch from network and cache the result for future offline use
-      return fetch(e.request).then(response => {
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return response;
-      }).catch(() => {
-        return new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } });
-      });
-    })
+      return response;
+    }).catch(() => new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } })))
   );
 });

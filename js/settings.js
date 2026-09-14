@@ -217,21 +217,12 @@ function renderSettingsView() {
 
       <button class="btn btn-primary" onclick="submitSettings()">Save Settings</button>
 
-      <!-- Offline mode -->
+      <!-- App updates -->
       <div class="field-group" style="margin-top:4px;">
-        <div class="field-group-label">Connectivity</div>
+        <div class="field-group-label">App Updates</div>
         <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
-          <div class="field-row toggle-row" style="margin:0;">
-            <div>
-              <div class="toggle-label" style="font-weight:600;">Offline Mode</div>
-              <div style="font-size:12px;color:var(--muted);margin-top:2px;">On: app never touches the network. Turn off only when updating the app.</div>
-            </div>
-            <button class="toggle ${getOfflineMode() ? 'on' : ''}" id="offline-toggle" onclick="toggleOfflineMode()" aria-pressed="${getOfflineMode()}"></button>
-          </div>
-          <button class="btn btn-outline" style="width:100%;margin-top:4px;" onclick="location.reload()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            Restart App
-          </button>
+          <p style="font-size:13px;color:var(--muted);line-height:1.5;">The app updates itself whenever you open it with a connection. The version is shown at the top of this page.</p>
+          <button class="btn btn-outline" style="width:100%;" onclick="checkForUpdates()">Check for updates</button>
         </div>
       </div>
 
@@ -441,15 +432,6 @@ async function saveSigCanvas() {
   toast('Signature saved', 'success');
 }
 
-function toggleOfflineMode() {
-  const btn = document.getElementById('offline-toggle');
-  const isOn = btn.classList.toggle('on');
-  btn.setAttribute('aria-pressed', isOn);
-  setOfflineMode(isOn);
-  toast(isOn ? 'Offline mode on — network blocked' : 'Update mode on — network allowed', 'success');
-}
-
-window.toggleOfflineMode  = toggleOfflineMode;
 window.renderSettingsView = renderSettingsView;
 window.toggleVAT          = toggleVAT;
 window.handleLogoUpload   = handleLogoUpload;
