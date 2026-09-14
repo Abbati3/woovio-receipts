@@ -4,6 +4,7 @@ let _docType    = 'Receipt';
 let _editingId  = null;   // null = new, number = edit/duplicate
 let _editingCreatedAt = null;  // preserved so edits keep their place in history
 let _convertedFromId  = null;  // set when this receipt settles an existing invoice
+let _editingPayments  = null;  // payments already recorded against the document being edited
 
 // ── Entry point ────────────────────────────────────────────────────────────
 
@@ -12,6 +13,7 @@ function startNewDoc(type) {
   _editingId        = null;
   _editingCreatedAt = null;
   _convertedFromId  = null;
+  _editingPayments  = null;
   renderBuilder(null);
   navigate('builder');
 }
@@ -22,6 +24,7 @@ function startEditDoc(doc) {
   // duplicates/conversions arrive without an id — they are new documents
   _editingCreatedAt = doc.id ? doc.createdAt : null;
   _convertedFromId  = doc.convertedFromId || null;
+  _editingPayments  = doc.payments?.length ? doc.payments.map(p => ({ date: p.date, amount: p.amount })) : null;
   renderBuilder(doc);
   navigate('builder');
 }
@@ -190,7 +193,10 @@ function renderBuilder(prefill) {
         </div>
         <div class="field-row" id="amount-paid-row" style="${(prefill?.paymentStatus)==='Part-payment' ? '' : 'display:none;'}">
           <label>Amount Paid (₦)</label>
-          <input id="b-amountPaid" type="number" min="0" step="0.01" value="${prefill?.amountPaid||''}" placeholder="0.00" />
+          ${prefill?.payments?.length ? `
+          <input id="b-amountPaid" type="number" value="${sumPayments(prefill.payments)}" readonly />
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4;">Total of ${prefill.payments.length} recorded payment${prefill.payments.length === 1 ? '' : 's'}. Add or remove payments from the document's page in History.</div>` : `
+          <input id="b-amountPaid" type="number" min="0" step="0.01" value="${prefill?.amountPaid||''}" placeholder="0.00" />`}
         </div>
       </div>
 
@@ -529,7 +535,25 @@ async function saveDoc() {
     const amountPaidVal = parseFloat(document.getElementById('b-amountPaid')?.value) || 0;
     if (amountPaidVal < 0) { toast('Amount paid cannot be negative', 'error'); return; }
 
+    const status   = document.getElementById('b-paymentStatus').value;
+    const recorded = _editingPayments || [];
+    if (status === 'Unpaid' && recorded.length &&
+        !confirm(`Marking this Unpaid removes its ${recorded.length} recorded payment${recorded.length === 1 ? '' : 's'}. Continue?`)) return;
+
     const totals = calcTotals(draft);
+
+    // Recorded payments are the record of what was paid. A figure typed here with
+    // none recorded yet becomes the first of them, dated with the document.
+    let paymentStatus = status;
+    let payments      = status === 'Unpaid' ? [] : recorded;
+    let amountPaid    = null;
+    if (status === 'Part-payment') {
+      if (!payments.length && amountPaidVal > 0) {
+        payments = [{ date: document.getElementById('b-date').value, amount: amountPaidVal }];
+      }
+      amountPaid = payments.length ? sumPayments(payments) : amountPaidVal;
+      if (payments.length && amountPaid >= totals.grandTotal - 0.005) { paymentStatus = 'Paid'; amountPaid = null; }
+    }
 
     const doc = {
       ...draft,
@@ -539,10 +563,9 @@ async function saveDoc() {
       clientPhone:   document.getElementById('b-clientPhone').value.trim(),
       clientAddress: document.getElementById('b-clientAddress').value.trim(),
       date:          document.getElementById('b-date').value,
-      paymentStatus:   document.getElementById('b-paymentStatus').value,
-      amountPaid:      document.getElementById('b-paymentStatus').value === 'Part-payment'
-                         ? (parseFloat(document.getElementById('b-amountPaid')?.value) || 0)
-                         : null,
+      paymentStatus,
+      amountPaid,
+      payments,
       productionDays:  _docType === 'Invoice'
                          ? (parseInt(document.getElementById('b-productionDays')?.value) || null)
                          : null,
@@ -628,6 +651,266 @@ function outstandingOf(d) {
   if (d.paymentStatus === 'Unpaid')       return grand;
   if (d.paymentStatus === 'Part-payment') return Math.max(0, grand - (d.amountPaid || 0));
   return 0;
+}
+
+// ── Payments ───────────────────────────────────────────────────────────────
+//
+// A job is often paid in instalments — a deposit, then the balance — so each
+// payment is recorded with its date. amountPaid stays the running total, so the
+// PDF and everything else that reads it carry on unchanged.
+
+const PRODUCTION_SHARE = 0.75;   // the invoice terms: production starts once 75% is paid
+
+function sumPayments(list) {
+  return Math.round((list || []).reduce((s, p) => s + (Number(p.amount) || 0), 0) * 100) / 100;
+}
+
+// Documents from before payments were recorded carry only a total, which shows
+// as one payment on the document's date
+function paymentsOf(d) {
+  if (d.payments?.length) return d.payments;
+  if (d.paymentStatus === 'Part-payment' && d.amountPaid > 0) return [{ date: d.date, amount: d.amountPaid }];
+  return [];
+}
+
+function paidOf(d) {
+  const grand = calcTotals(d).grandTotal;
+  if (isSettled(d) || d.paymentStatus === 'Paid') return grand;
+  if (d.paymentStatus === 'Part-payment') return Math.min(grand, d.amountPaid || 0);
+  return 0;
+}
+
+// How far an unpaid invoice is from the 75% that lets production start
+function productionHtml(d) {
+  if (d.docType !== 'Invoice' || outstandingOf(d) <= 0) return '';
+  const grand = calcTotals(d).grandTotal;
+  if (grand <= 0) return '';
+  const paid  = paidOf(d);
+  const pct   = Math.floor(paid / grand * 100);
+  const short = Math.ceil((grand * PRODUCTION_SHARE - paid) * 100) / 100;
+  const ready = short <= 0;
+  return `
+      <div class="pay-bar ${ready ? 'ready' : ''}"><span style="width:${Math.min(100, pct)}%"></span></div>
+      <div class="pay-note ${ready ? 'ready' : ''}">${ready
+        ? `${pct}% paid · ready for production`
+        : `${pct}% paid · ${fmtNaira(short)} more to start production`}</div>`;
+}
+
+// Status follows the money: nothing left owing is Paid, anything short is Part-payment
+function applyPayments(doc, payments) {
+  const total = sumPayments(payments);
+  doc.payments = payments;
+  if (payments.length && total >= calcTotals(doc).grandTotal - 0.005) {
+    doc.paymentStatus = 'Paid';         doc.amountPaid = null;
+  } else if (total > 0) {
+    doc.paymentStatus = 'Part-payment'; doc.amountPaid = total;
+  } else {
+    doc.paymentStatus = 'Unpaid';       doc.amountPaid = null;
+  }
+}
+
+function paymentPanelHtml(doc) {
+  if (isSettled(doc)) return '';
+  const list  = paymentsOf(doc);
+  const bal   = outstandingOf(doc);
+  if (bal <= 0 && !list.length) return '';
+  const grand = calcTotals(doc).grandTotal;
+  // A document marked Paid by hand, with only a deposit on record, keeps its
+  // payments fixed — removing one there would wrongly reopen a balance
+  const editable = bal > 0 || sumPayments(list) >= grand - 0.005;
+  const rows = list.map((p, i) => `
+        <div class="pv-pay-row">
+          <span>${fmtDate(p.date)}</span>
+          <span class="pv-pay-amt">${fmtNaira(p.amount)}</span>
+          ${editable ? `<button onclick="removePayment(${doc.id}, ${i})" aria-label="Remove payment">×</button>` : ''}
+        </div>`).join('');
+  return `
+      <div class="pv-pay">
+        <div class="pv-pay-top">
+          <span>${bal > 0 ? `Paid ${fmtNaira(paidOf(doc))} of ${fmtNaira(grand)}` : 'Fully paid'}</span>
+          ${bal > 0 ? `<span class="pv-pay-bal">Balance ${fmtNaira(bal)}</span>` : ''}
+        </div>
+        ${productionHtml(doc)}
+        ${rows ? `<div class="pv-pay-list">${rows}</div>` : ''}
+        ${bal > 0 ? `<button class="btn btn-outline pv-pay-btn" onclick="openRecordPayment(${doc.id})">+ Record Payment</button>` : ''}
+      </div>`;
+}
+
+async function openRecordPayment(id) {
+  const db  = await getDB();
+  const doc = await db.get('receipts', id);
+  if (!doc) return;
+  const bal    = outstandingOf(doc);
+  const grand  = calcTotals(doc).grandTotal;
+  const toProd = doc.docType === 'Invoice'
+    ? Math.ceil((grand * PRODUCTION_SHARE - paidOf(doc)) * 100) / 100 : 0;
+
+  document.getElementById('pay-overlay')?.remove();
+  const el = document.createElement('div');
+  el.id = 'pay-overlay';
+  el.onclick = e => { if (e.target === el) closeRecordPayment(); };
+  el.innerHTML = `
+    <div id="pay-box">
+      <div class="pay-title">Record payment</div>
+      <div class="pay-sub">${esc(doc.clientName)} · ${esc(doc.number)} · balance ${fmtNaira(bal)}</div>
+      <div class="pay-chips">
+        ${toProd > 0 && toProd < bal ? `<button class="pill-btn" onclick="setPayAmount(${toProd})">Up to 75% · ${fmtNaira(toProd)}</button>` : ''}
+        <button class="pill-btn" onclick="setPayAmount(${bal})">Full balance · ${fmtNaira(bal)}</button>
+      </div>
+      <div class="field-group">
+        <div class="field-row">
+          <label>Amount received (₦)</label>
+          <input id="pay-amount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" />
+        </div>
+        <div class="field-row">
+          <label>Date</label>
+          <input id="pay-date" type="date" value="${todayISO()}" />
+        </div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:14px;" onclick="saveRecordedPayment(${id})">Save Payment</button>
+      <button class="btn btn-outline" style="width:100%;margin-top:10px;" onclick="closeRecordPayment()">Cancel</button>
+    </div>`;
+  document.body.appendChild(el);
+}
+
+function setPayAmount(v) {
+  const el = document.getElementById('pay-amount');
+  if (el) el.value = v;
+}
+
+function closeRecordPayment() {
+  document.getElementById('pay-overlay')?.remove();
+}
+
+async function saveRecordedPayment(id) {
+  const amount = Math.round((parseFloat(document.getElementById('pay-amount')?.value) || 0) * 100) / 100;
+  const date   = document.getElementById('pay-date')?.value || todayISO();
+  if (amount <= 0) { toast('Enter the amount received', 'error'); return; }
+
+  const db  = await getDB();
+  const doc = await db.get('receipts', id);
+  if (!doc) return;
+  const bal = outstandingOf(doc);
+  if (amount > bal + 0.005) { toast(`That is more than the balance of ${fmtNaira(bal)}`, 'error'); return; }
+
+  const payments = paymentsOf(doc).map(p => ({ date: p.date, amount: p.amount }));
+  payments.push({ date, amount });
+  payments.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  applyPayments(doc, payments);
+  await db.put('receipts', doc);
+
+  closeRecordPayment();
+  await reloadDocs();
+  showDocSheet(doc, { instant: true });
+  toast(doc.paymentStatus === 'Paid'
+    ? 'Payment recorded — fully paid ✓'
+    : `Payment recorded — balance ${fmtNaira(outstandingOf(doc))}`, 'success');
+}
+
+async function removePayment(id, index) {
+  const db  = await getDB();
+  const doc = await db.get('receipts', id);
+  if (!doc) return;
+  const payments = paymentsOf(doc).map(p => ({ date: p.date, amount: p.amount }));
+  const p = payments[index];
+  if (!p || !confirm(`Remove the payment of ${fmtNaira(p.amount)} from ${fmtDate(p.date)}?`)) return;
+  payments.splice(index, 1);
+  applyPayments(doc, payments);
+  await db.put('receipts', doc);
+  await reloadDocs();
+  showDocSheet(doc, { instant: true });
+  toast('Payment removed', 'success');
+}
+
+// ── Home dashboard ─────────────────────────────────────────────────────────
+
+let _homeShowAll = false;
+
+async function loadDocs() {
+  const db = await getDB();
+  _allDocs = await db.getAll('receipts');
+  _allDocs.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  indexSettlements();
+}
+
+// After a document changes, refresh both the home screen and History in place
+// (History keeps whatever search is typed)
+async function reloadDocs() {
+  await renderHome();
+  renderHistorySummary();
+  filterHistory(document.getElementById('history-search')?.value || '');
+}
+
+function toggleHomeShowAll() {
+  _homeShowAll = !_homeShowAll;
+  renderHome();
+}
+
+async function renderHome() {
+  const el = document.getElementById('home-dash');
+  if (!el) return;
+  await loadDocs();
+
+  if (!_allDocs.length) {
+    el.innerHTML = `
+      <div class="empty-state" style="padding:24px 16px;">
+        <h3>No documents yet</h3>
+        <p>Once you have some, this page shows what clients owe you and which jobs are ready for production.</p>
+      </div>`;
+    return;
+  }
+
+  const billable = _allDocs.filter(d => !isSettled(d));
+  const month    = billable.filter(d => (d.date || '').startsWith(monthISO()));
+  const billed   = month.reduce((s, d) => s + calcTotals(d).grandTotal, 0);
+  const owing    = billable.filter(d => outstandingOf(d) > 0)
+                           .sort((a, b) => (a.date || '').localeCompare(b.date || ''));  // oldest first
+  const owed     = owing.reduce((s, d) => s + outstandingOf(d), 0);
+
+  const age   = backupAgeDays();
+  const nudge = age === null || age > 14
+    ? `<button class="home-nudge" onclick="backupData()">${age === null ? 'No backup taken yet' : `Last backup was ${age} days ago`} — tap to back up now</button>`
+    : '';
+
+  const SHOW  = 5;
+  const shown = _homeShowAll ? owing : owing.slice(0, SHOW);
+  const rows  = shown.map(d => {
+    const bal     = outstandingOf(d);
+    const days    = daysSinceISO(d.date);
+    const overdue = d.docType === 'Invoice' && days > 14;
+    return `
+    <div class="history-card" onclick="openHistoryDoc(${d.id})">
+      <div class="hc-top">
+        <span class="hc-type ${d.docType.toLowerCase()}">${esc(d.docType)}</span>
+        <span class="hc-num">${esc(d.number)}</span>
+        ${overdue ? '<span class="hc-status status-overdue">Overdue</span>' : ''}
+      </div>
+      <div class="hc-client">${esc(d.clientName)}</div>
+      <div class="hc-bottom">
+        <span class="home-owes">Owes ${fmtNaira(bal)}</span>
+        <span class="hc-date">${days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : days + ' days ago'}</span>
+      </div>${productionHtml(d)}
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    ${nudge}
+    <div class="summary-card">
+      <div class="summary-item">
+        <div class="summary-value">${fmtNaira(billed)}</div>
+        <div class="summary-label">Billed this month · ${month.length} doc${month.length === 1 ? '' : 's'}</div>
+      </div>
+      <div class="summary-item ${owed > 0 ? 'summary-warn' : ''}">
+        <div class="summary-value">${fmtNaira(owed)}</div>
+        <div class="summary-label">Owed to you · ${owing.length} doc${owing.length === 1 ? '' : 's'}</div>
+      </div>
+    </div>
+    <div class="home-label">Waiting on payment</div>
+    ${owing.length ? `
+    <div class="home-list">${rows}
+      ${owing.length > SHOW ? `<button class="home-more" onclick="toggleHomeShowAll()">${_homeShowAll ? 'Show fewer' : `Show all ${owing.length}`}</button>` : ''}
+    </div>` : `<div class="home-clear">Nothing owed — every document is paid.</div>`}
+    <div style="height:16px;"></div>`;
 }
 
 // Tap the billed-total tile to cycle between this month and all-time — the
@@ -734,7 +1017,7 @@ function renderHistoryCards(docs) {
       <div class="hc-bottom">
         <span class="hc-total">${fmtNaira(calcTotals(d).grandTotal)}${d.paymentStatus === 'Part-payment' && bal > 0 ? ` <span class="hc-balance">· Bal ${fmtNaira(bal)}</span>` : ''}</span>
         <span class="hc-date">${fmtDate(d.date)}</span>
-      </div>
+      </div>${productionHtml(d)}
     </div>`;
   }).join('');
 }
@@ -746,7 +1029,7 @@ async function openHistoryDoc(id) {
   showDocSheet(doc);
 }
 
-function showDocSheet(doc) {
+function showDocSheet(doc, opts = {}) {
   const s = getSettings() || {};
   const t = calcTotals(doc);
   const existing = document.getElementById('doc-sheet');
@@ -817,13 +1100,14 @@ function showDocSheet(doc) {
   const sheet = document.createElement('div');
   sheet.id = 'doc-sheet';
   sheet.innerHTML = `
-    <div id="doc-preview-panel">
+    <div id="doc-preview-panel"${opts.instant ? ' class="open"' : ''}>
       <div class="pv-header">
         <span>${esc(doc.docType)} ${esc(doc.number)}</span>
         <span class="hc-status status-${(doc.paymentStatus||'Paid').toLowerCase().replace('-','')}" style="margin-left:auto;margin-right:12px;">${esc(doc.paymentStatus||'Paid')}</span>
         <button class="pv-close" onclick="closeDocSheet()" aria-label="Close">×</button>
       </div>
       ${isSettled(doc) ? `<div class="pv-settled">Settled by Receipt ${esc(_settledBy[doc.id].number || '')} — no longer counted as outstanding.</div>` : ''}
+      ${paymentPanelHtml(doc)}
       <div class="pv-scroll">
         <div class="pv-paper">
           <img class="pv-logo" src="${typeof makeBracketWLogo === 'function' ? makeBracketWLogo(200) : ''}" alt="" />
@@ -865,7 +1149,8 @@ function showDocSheet(doc) {
     </div>
   `;
   document.body.appendChild(sheet);
-  setTimeout(() => sheet.querySelector('#doc-preview-panel').classList.add('open'), 20);
+  // Re-shown after a payment changes: already open, so it does not slide in again
+  if (!opts.instant) setTimeout(() => sheet.querySelector('#doc-preview-panel').classList.add('open'), 20);
 }
 
 function closeDocSheet() {
@@ -907,6 +1192,7 @@ async function duplicateDoc(id) {
   const dup = Object.assign({}, src);
   delete dup.id;
   delete dup.convertedFromId;  // a copy settles nothing
+  delete dup.payments;         // and has had nothing paid against it
   dup.number    = genNumber(s, dup.docType);
   dup.date      = todayISO();
   dup.createdAt = new Date().toISOString();
@@ -939,6 +1225,7 @@ async function convertToReceipt(id) {
   rec.createdAt       = new Date().toISOString();
   rec.paymentStatus   = 'Paid';
   rec.amountPaid      = null;
+  delete rec.payments;         // they stay on the invoice they were paid against
   rec.includeTC       = false;
   rec.convertedFromId = id;   // settles the source invoice once saved
   startEditDoc(rec);
@@ -951,7 +1238,7 @@ async function deleteDoc(id) {
   await db.delete('receipts', id);
   closeDocSheet();
   toast('Deleted', 'success');
-  await renderHistory();
+  await reloadDocs();
 }
 
 function fmtDate(iso) {
@@ -986,4 +1273,11 @@ window.toggleLumpSum       = toggleLumpSum;
 window.switchDocType    = switchDocType;
 window.selectStatus     = selectStatus;
 window.saveDoc          = saveDoc;
+window.renderHome          = renderHome;
+window.toggleHomeShowAll   = toggleHomeShowAll;
+window.openRecordPayment   = openRecordPayment;
+window.setPayAmount        = setPayAmount;
+window.closeRecordPayment  = closeRecordPayment;
+window.saveRecordedPayment = saveRecordedPayment;
+window.removePayment       = removePayment;
 window.openHistoryDoc   = openHistoryDoc;

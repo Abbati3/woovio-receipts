@@ -231,6 +231,7 @@ function renderSettingsView() {
         <div class="field-group-label">Data Backup</div>
         <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
           <p style="font-size:13px;color:var(--muted);line-height:1.5;">Export all your receipts, invoices and settings as a JSON file. Use this to back up your data or transfer it to a new device.</p>
+          <p id="last-backup" style="font-size:13px;line-height:1.5;"></p>
           <button class="btn btn-outline" style="width:100%;" onclick="backupData()">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Export Backup
@@ -247,6 +248,19 @@ function renderSettingsView() {
   `;
 
   showVersion('settings-version');
+  showLastBackup();
+}
+
+// Red once it has been more than two weeks — a lost phone takes every document with it
+function showLastBackup() {
+  const el = document.getElementById('last-backup');
+  if (!el) return;
+  const days = backupAgeDays();
+  const stale = days === null || days > 14;
+  el.textContent = days === null ? 'No backup taken yet on this phone.'
+    : `Last backup: ${days <= 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago'}.`;
+  el.style.color      = stale ? 'var(--danger)' : 'var(--muted)';
+  el.style.fontWeight = stale ? '600' : '';
 }
 
 function esc(str) {
@@ -433,6 +447,7 @@ async function saveSigCanvas() {
 }
 
 window.renderSettingsView = renderSettingsView;
+window.showLastBackup     = showLastBackup;
 window.toggleVAT          = toggleVAT;
 window.handleLogoUpload   = handleLogoUpload;
 window.removeLogo         = removeLogo;

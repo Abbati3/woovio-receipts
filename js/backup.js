@@ -1,5 +1,25 @@
 // ── Backup & Restore ────────────────────────────────────────────────────────
 
+// Prefixed: the shoes app shares this origin's storage and keeps its own date
+const LAST_BACKUP_KEY = 'receiptsLastBackupAt';
+
+function markBackedUp() {
+  localStorage.setItem('docsSinceBackup', '0');
+  localStorage.setItem(LAST_BACKUP_KEY, new Date().toISOString());
+  if (typeof showLastBackup === 'function') showLastBackup();
+  if (document.getElementById('view-new')?.classList.contains('active')) renderHome().catch(() => {});
+}
+
+// Whole days since the last backup on this device, or null if there has been none
+function backupAgeDays() {
+  const last = localStorage.getItem(LAST_BACKUP_KEY);
+  if (!last) return null;
+  const t = new Date(last);
+  if (isNaN(t)) return null;
+  const p = n => String(n).padStart(2, '0');
+  return daysSinceISO(`${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`);
+}
+
 async function backupData() {
   try {
     const db       = await getDB();
@@ -24,7 +44,7 @@ async function backupData() {
       const file = new File([blob], filename, { type: 'application/json' });
       // Files only: iOS saves a title or text passed alongside as a separate .txt file
       await navigator.share({ files: [file] });
-      localStorage.setItem('docsSinceBackup', '0');
+      markBackedUp();
       toast(`Backup shared — ${receipts.length} document(s)`, 'success');
     } else {
       // Desktop fallback
@@ -36,7 +56,7 @@ async function backupData() {
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      localStorage.setItem('docsSinceBackup', '0');
+      markBackedUp();
       toast(`Backup saved — ${receipts.length} document(s)`, 'success');
     }
   } catch (e) {
@@ -91,5 +111,6 @@ async function handleRestoreFile(file) {
 }
 
 window.backupData        = backupData;
+window.backupAgeDays     = backupAgeDays;
 window.openRestorePicker = openRestorePicker;
 window.handleRestoreFile = handleRestoreFile;

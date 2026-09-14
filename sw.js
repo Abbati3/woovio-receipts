@@ -1,4 +1,4 @@
-const CACHE = 'woovio-v48';
+const CACHE = 'woovio-v49';
 
 // The PDF engine and its fonts (about 1.7MB) live in their own cache that
 // survives updates. They download once, not again with every version, and a PDF

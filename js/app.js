@@ -11,6 +11,7 @@ function showView(id) {
 
   try { if (id === 'settings') renderSettingsView(); } catch(e) { console.error('renderSettings:', e); }
   try { if (id === 'history')  renderHistory();       } catch(e) { console.error('renderHistory:', e); }
+  if (id === 'new') renderHome().catch(e => console.error('renderHome:', e));
 }
 
 function navigate(id) {

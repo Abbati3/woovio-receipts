@@ -552,6 +552,117 @@ html, body {
 
 .hc-balance { font-size: 12px; font-weight: 600; color: var(--danger); }
 
+/* ── Payment progress (invoice → 75% for production) ── */
+.pay-bar {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 9px;
+}
+.pay-bar > span { display: block; height: 100%; background: var(--gold); border-radius: 3px; }
+.pay-bar.ready > span { background: #2E7D32; }
+.pay-note { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.pay-note.ready { color: #2E7D32; font-weight: 600; }
+
+/* Payments on the document page */
+.pv-pay {
+  background: var(--surface);
+  padding: 12px 16px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.pv-pay-top { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; font-weight: 600; }
+.pv-pay-bal { color: var(--danger); }
+.pv-pay-list { margin-top: 8px; max-height: 110px; overflow-y: auto; }
+.pv-pay-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
+}
+.pv-pay-amt { margin-left: auto; font-weight: 600; }
+.pv-pay-row button {
+  background: none; border: none;
+  color: var(--muted); font-size: 20px; line-height: 1;
+  padding: 0 2px; cursor: pointer;
+}
+.pv-pay-btn { width: 100%; height: 40px; font-size: 14px; margin-top: 10px; }
+
+#pay-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 400;
+  display: flex; align-items: flex-end;
+}
+#pay-box {
+  background: var(--bg);
+  border-radius: 20px 20px 0 0;
+  padding: 20px 16px calc(20px + var(--safe-bot));
+  width: 100%;
+}
+.pay-title { font-size: 18px; font-weight: 700; }
+.pay-sub   { font-size: 13px; color: var(--muted); margin: 2px 0 12px; }
+.pay-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+
+/* ── Home dashboard ── */
+.home-nudge {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 0 16px 12px;
+  padding: 12px 14px;
+  background: #FFEBEE;
+  color: var(--danger);
+  border: none;
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.home-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 4px 16px 8px;
+}
+.home-list {
+  margin: 0 16px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.home-list .history-card:last-of-type { border-bottom: none; }
+.home-owes { font-size: 15px; font-weight: 700; color: var(--danger); }
+.home-more {
+  display: block;
+  width: 100%;
+  background: var(--bg);
+  border: none;
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dark);
+  cursor: pointer;
+}
+.home-clear {
+  margin: 0 16px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  color: var(--muted);
+  text-align: center;
+}
+
 /* ── History summary card ── */
 .summary-card {
   display: flex;
