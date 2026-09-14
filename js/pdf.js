@@ -330,7 +330,8 @@ async function exportPDF(doc) {
       const file = new File([blob], filename, { type: 'application/pdf' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         // iOS share sheet: WhatsApp, Files, AirDrop, etc.
-        navigator.share({ files: [file], title: filename }).catch(err => {
+        // Files only: a title alongside would arrive as an extra text item
+        navigator.share({ files: [file] }).catch(err => {
           if (err.name !== 'AbortError') pdf.download(filename);
         });
       } else {

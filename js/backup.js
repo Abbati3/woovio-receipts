@@ -22,7 +22,8 @@ async function backupData() {
     // iOS standalone PWA: blob URL + a.click() is blocked; use Web Share API
     if (navigator.canShare && navigator.canShare({ files: [new File([blob], filename, { type: 'application/json' })] })) {
       const file = new File([blob], filename, { type: 'application/json' });
-      await navigator.share({ files: [file], title: 'Woovio Backup' });
+      // Files only: iOS saves a title or text passed alongside as a separate .txt file
+      await navigator.share({ files: [file] });
       localStorage.setItem('docsSinceBackup', '0');
       toast(`Backup shared — ${receipts.length} document(s)`, 'success');
     } else {
